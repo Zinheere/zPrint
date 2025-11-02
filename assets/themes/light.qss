@@ -1,0 +1,34 @@
+/* Light theme QSS for zPrint */
+QWidget {
+  background-color: #fafafa;
+  color: #222222;
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+QLineEdit, QComboBox, QScrollArea, QTextEdit {
+  background-color: #ffffff;
+  color: #222222;
+  border: 1px solid #dcdcdc;
+}
+
+QPushButton {
+  background-color: #f0f0f0;
+  color: #222222;
+  border: 1px solid #d0d0d0;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+QPushButton:pressed {
+  background-color: #e0e0e0;
+}
+
+QToolTip {
+  background-color: #ffffff;
+  color: #222222;
+  border: 1px solid #cccccc;
+}
+
+QLabel[thumbnail="true"] {
+  border: 1px solid #cccccc;
+}
