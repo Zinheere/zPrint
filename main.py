@@ -40,13 +40,23 @@ class MainWindow(QMainWindow):
         # a separate object rather than attaching attributes to this instance)
         btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
         if btn:
-            # make it an icon-only button
+            # make it an icon-only button that matches other buttons and is square
             icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'image.png')
             if os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
-                btn.setIconSize(QSize(20, 20))
             btn.setText('')
-            btn.setFlat(True)
+            # determine a target size using another top-bar button (btnReload) if available
+            ref = self.findChild(QPushButton, 'btnReload') or (self.ui and self.ui.findChild(QPushButton, 'btnReload'))
+            target_h = 28
+            if ref is not None:
+                # sizeHint may be 0 before show(); try sizeHint then minimumSizeHint
+                hint = ref.sizeHint().height() or ref.minimumSizeHint().height()
+                if hint and hint > 0:
+                    target_h = hint
+            btn.setFixedSize(QSize(target_h, target_h))
+            # icon should be slightly smaller to provide padding
+            btn.setIconSize(QSize(max(8, target_h - 8), max(8, target_h - 8)))
+            # keep the same visual style as other QPushButton elements (don't make it flat)
             btn.setToolTip('Toggle theme')
             btn.clicked.connect(self.toggle_theme)
 
@@ -64,8 +74,22 @@ class MainWindow(QMainWindow):
 
     # Placeholder methods
     def toggle_theme(self):
-        # Toggle between a minimal light and dark stylesheet
+        # Toggle theme by loading QSS files from assets/themes with an inline fallback
         self.dark_theme = not getattr(self, 'dark_theme', False)
+        themes_dir = os.path.join(os.path.dirname(__file__), 'assets', 'themes')
+        qss_name = 'dark.qss' if self.dark_theme else 'light.qss'
+        qss_path = os.path.join(themes_dir, qss_name)
+
+        if os.path.exists(qss_path):
+            try:
+                with open(qss_path, 'r', encoding='utf-8') as fh:
+                    QApplication.instance().setStyleSheet(fh.read())
+                return
+            except Exception:
+                # fall through to inline fallback on error
+                pass
+
+        # Inline fallback (kept minimal)
         if self.dark_theme:
             dark = '''
             QWidget { background-color: #2b2b2b; color: #e6e6e6; }
