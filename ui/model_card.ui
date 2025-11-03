@@ -2,6 +2,9 @@
 <ui version="4.0">
  <class>ModelCard</class>
  <widget class="QWidget" name="modelCardTemplate">
+  <property name="objectName">
+   <string>modelCardTemplate</string>
+  </property>
   <property name="minimumSize">
    <size>
     <width>200</width>

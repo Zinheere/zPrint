@@ -17,6 +17,9 @@
    <layout class="QVBoxLayout" name="verticalLayout">
     <item>
          <widget class="QWidget" name="topBar1">
+            <property name="objectName">
+             <string>topBar1</string>
+            </property>
             <property name="autoFillBackground">
              <bool>false</bool>
             </property>

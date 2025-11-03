@@ -104,6 +104,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"zPrint", None))
+        self.topBar1.setObjectName(QCoreApplication.translate("MainWindow", u"topBar1", None))
         self.btnThemeToggle.setText(QCoreApplication.translate("MainWindow", u"Theme", None))
         self.btnReload.setText(QCoreApplication.translate("MainWindow", u"Reload", None))
         self.btnImport.setText(QCoreApplication.translate("MainWindow", u"Import", None))
