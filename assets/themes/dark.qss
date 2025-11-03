@@ -53,10 +53,11 @@ QPushButton#btnAddModel {
 }
 
 /* Make the theme toggle button black */
+/* Theme toggle styled white in dark mode (icon will be tinted opposite color) */
 QPushButton#btnThemeToggle {
-  background-color: #000000;
-  color: #FFFFFF;
-  border: 1px solid #111111;
+  background-color: #FFFFFF;
+  color: #000000;
+  border: 1px solid #E0E6ED;
 }
 
 /* Success / Error indicators */

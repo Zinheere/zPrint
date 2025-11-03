@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QSizePolicy
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QSize
-from PySide6.QtGui import QIcon, QFont
+from PySide6.QtGui import QIcon, QFont, QPixmap, QPainter, QColor
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
 
         btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
         if btn:
-            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'image.png')
+            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'toggletheme.png')
             if os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
             btn.setText('')
@@ -55,6 +55,12 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(self.toggle_theme)
             # make it resize-friendly; square sizing enforced in resizeEvent
             btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            # keep reference so we can swap the icon color when theme changes
+            self.theme_button = btn
+            # placeholders for tinted icons (computed lazily)
+            self._theme_icon_white = None
+            self._theme_icon_black = None
+            self._theme_icon_path = icon_path if os.path.exists(icon_path) else None
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnReload') or (self.ui and self.ui.findChild(QPushButton, 'btnReload'))
@@ -137,6 +143,23 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _tint_icon(self, path: str, hex_color: str) -> QIcon:
+        """Return a QIcon with the source pixmap tinted to hex_color. Uses SourceIn composition to preserve alpha."""
+        try:
+            pix = QPixmap(path)
+            if pix.isNull():
+                return QIcon()
+            out = QPixmap(pix.size())
+            out.fill(QColor(0, 0, 0, 0))
+            painter = QPainter(out)
+            painter.drawPixmap(0, 0, pix)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(out.rect(), QColor(hex_color))
+            painter.end()
+            return QIcon(out)
+        except Exception:
+            return QIcon()
+
     # Placeholder methods
     def toggle_theme(self):
         # Toggle theme state and apply the corresponding QSS
@@ -154,7 +177,7 @@ class MainWindow(QMainWindow):
             try:
                 with open(qss_path, 'r', encoding='utf-8') as fh:
                     QApplication.instance().setStyleSheet(fh.read())
-                return
+                # continue to update themed icons after applying stylesheet
             except Exception:
                 pass
 
@@ -169,6 +192,32 @@ class MainWindow(QMainWindow):
             QApplication.instance().setStyleSheet(dark)
         else:
             QApplication.instance().setStyleSheet('')
+
+        # Update the theme toggle icon to be the opposite color of the button background
+        try:
+            if hasattr(self, 'theme_button') and self._theme_icon_path:
+                # lazily compute tinted icons
+                if self._theme_icon_white is None:
+                    self._theme_icon_white = self._tint_icon(self._theme_icon_path, '#FFFFFF')
+                if self._theme_icon_black is None:
+                    self._theme_icon_black = self._tint_icon(self._theme_icon_path, '#000000')
+
+                if dark:
+                    # dark mode: button background is white (per dark.qss) -> icon should be black
+                    if self._theme_icon_black:
+                        self.theme_button.setIcon(self._theme_icon_black)
+                else:
+                    # light mode: button background is black (per light.qss) -> icon should be white
+                    if self._theme_icon_white:
+                        self.theme_button.setIcon(self._theme_icon_white)
+                # keep icon size consistent with button
+                try:
+                    btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
+                    self.theme_button.setIconSize(QSize(max(8, btn_h - 8), max(8, btn_h - 8)))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def reload_files(self):
         print("Reload files")
