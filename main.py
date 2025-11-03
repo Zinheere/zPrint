@@ -2,19 +2,21 @@ import sys
 import os
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QSizePolicy
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, Qt, QSize
+from PySide6.QtCore import QFile, Qt, QSize, QByteArray
 from PySide6.QtGui import QIcon, QFont, QPixmap, QPainter, QColor
 # NEW: try QtSvg for reliable SVG rendering
 try:
     from PySide6.QtSvg import QSvgRenderer  # type: ignore
 except Exception:
     QSvgRenderer = None
+import xml.etree.ElementTree as ET
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         # theme state: False = light, True = dark
         self.dark_theme = False
+        self._icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
         # track widgets/actions that need tinted icons reapplied on theme/resize
         self._icon_targets = []  # entries: {'kind': 'button'|'action', 'widget': QWidget, 'action': QAction|None, 'path': str}
         self.load_ui()
@@ -60,72 +62,32 @@ class MainWindow(QMainWindow):
 
         btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
         if btn:
-            icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
-            svg_path = os.path.join(icons_dir, 'toggletheme.svg')
-            # store path for tinting; apply_theme will set the appropriate tinted icon
-            self._theme_icon_path = svg_path if os.path.exists(svg_path) else None
-            if self._theme_icon_path is None:
-                print("[icons] Theme toggle SVG not found at:", svg_path)
-            else:
-                print("[icons] Found theme toggle SVG:", svg_path)
+            self._theme_icon_path = self._resolve_icon_path('toggletheme.svg')
             btn.setToolTip('Toggle theme')
             btn.clicked.connect(self.toggle_theme)
-            # Keep text until we successfully set an icon in apply_theme()
             btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-            # keep reference so we can swap the icon color when theme changes
             self.theme_button = btn
-            # placeholders for tinted icons (computed lazily)
-            self._theme_icon_white = None
-            self._theme_icon_black = None
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnReload') or (self.ui and self.ui.findChild(QPushButton, 'btnReload'))
         if btn:
             btn.clicked.connect(self.reload_files)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # only add an icon if present in assets/icons
-            try:
-                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
-                for cand in ('reload.svg', 'refresh.svg'):
-                    p = os.path.join(icons_dir, cand)
-                    if os.path.exists(p):
-                        self._icon_targets.append({'kind': 'button', 'widget': btn, 'action': None, 'path': p})
-                        break
-            except Exception:
-                pass
+            self._register_icon(btn, ('reload.svg', 'refresh.svg'))
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnImport') or (self.ui and self.ui.findChild(QPushButton, 'btnImport'))
         if btn:
             btn.clicked.connect(self.import_files)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # only add an icon if present in assets/icons
-            try:
-                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
-                for cand in ('import.svg', 'upload.svg', 'open.svg'):
-                    p = os.path.join(icons_dir, cand)
-                    if os.path.exists(p):
-                        self._icon_targets.append({'kind': 'button', 'widget': btn, 'action': None, 'path': p})
-                        break
-            except Exception:
-                pass
+            self._register_icon(btn, ('import.svg', 'upload.svg', 'open.svg'))
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnAddModel') or (self.ui and self.ui.findChild(QPushButton, 'btnAddModel'))
         if btn:
             btn.clicked.connect(self.add_model)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # only add an icon if present in assets/icons
-            try:
-                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
-                for cand in ('addmodel.svg', 'add.svg', 'plus.svg', 'new.svg'):
-                    p = os.path.join(icons_dir, cand)
-                    if os.path.exists(p):
-                        self._icon_targets.append({'kind': 'button', 'widget': btn, 'action': None, 'path': p})
-                        break
-            except Exception:
-                pass
-            # keep a direct reference for sizing comparisons with inputs
+            self._register_icon(btn, ('addmodel.svg', 'add.svg', 'plus.svg', 'new.svg'))
             self._btn_add_model = btn
             self.top_bar_buttons.append(btn)
 
@@ -159,28 +121,14 @@ class MainWindow(QMainWindow):
         # Prepare references to inputs on the second top bar for resizing
         self.top_bar_inputs = []
         search = self.findChild(QLabel, 'searchBox') or (self.ui and self.ui.findChild(QLabel, 'searchBox'))
-        # searchBox is a QLineEdit; use a broad lookup in case the above didn't match QLabel
         if search is None:
             from PySide6.QtWidgets import QLineEdit
             search = self.findChild(QLineEdit, 'searchBox') or (self.ui and self.ui.findChild(QLineEdit, 'searchBox'))
-        if search:
-            try:
-                # Make it expand horizontally and be fixed vertically (we'll set its height on resize)
-                search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                # add leading search icon only if available in assets/icons
-                try:
-                    icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
-                    from PySide6.QtWidgets import QLineEdit as _QLE
-                    for cand in ('search.svg', 'magnify.svg', 'magnifier.svg'):
-                        p = os.path.join(icons_dir, cand)
-                        if os.path.exists(p):
-                            act = search.addAction(QIcon(p), _QLE.LeadingPosition)
-                            self._icon_targets.append({'kind': 'action', 'widget': search, 'action': act, 'path': p})
-                            break
-                except Exception:
-                    pass
-            except Exception:
-                pass
+        if search is not None:
+            from PySide6.QtWidgets import QLineEdit as _QLE
+            search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            action = search.addAction(QIcon(), _QLE.LeadingPosition)
+            self._register_icon(search, ('search.svg', 'magnify.svg', 'magnifier.svg'), action)
             self.top_bar_inputs.append(search)
 
         from PySide6.QtWidgets import QComboBox
@@ -350,7 +298,67 @@ class MainWindow(QMainWindow):
 
             # Prefer QSvgRenderer for SVGs
             if path.lower().endswith('.svg') and QSvgRenderer is not None:
-                renderer = QSvgRenderer(path)
+                # Attempt to sanitize background rectangles from the SVG before rendering
+                renderer = None
+                try:
+                    with open(path, 'r', encoding='utf-8') as fh:
+                        svg_text = fh.read()
+                    # Parse and remove obvious full-canvas background rects
+                    try:
+                        root = ET.fromstring(svg_text)
+                        # Determine canvas size from viewBox if available
+                        vb = root.attrib.get('viewBox')
+                        vb_w = vb_h = None
+                        if vb:
+                            parts = [p for p in vb.replace(',', ' ').split(' ') if p.strip()]
+                            if len(parts) == 4:
+                                try:
+                                    vb_w = float(parts[2])
+                                    vb_h = float(parts[3])
+                                except Exception:
+                                    vb_w = vb_h = None
+                        # Iterate over rects and remove ones covering full canvas or 100%
+                        removed_any = False
+                        for parent in list(root.iter()):
+                            # Work on a copy of list to allow removal
+                            for rect in list(parent):
+                                if rect.tag.lower().endswith('rect'):
+                                    w_attr = rect.attrib.get('width', '')
+                                    h_attr = rect.attrib.get('height', '')
+                                    x_attr = rect.attrib.get('x', '0')
+                                    y_attr = rect.attrib.get('y', '0')
+                                    style = rect.attrib.get('style', '')
+                                    fill = rect.attrib.get('fill', '')
+                                    def to_float(v):
+                                        try:
+                                            v = v.replace('px', '')
+                                            return float(v)
+                                        except Exception:
+                                            return None
+                                    # Heuristic: 100% x 100% or matches viewBox size at x=0,y=0 and has a fill (not none)
+                                    is_percent_full = (w_attr.strip().endswith('%') and h_attr.strip().endswith('%') and w_attr.strip().startswith('100') and h_attr.strip().startswith('100'))
+                                    w_num = to_float(w_attr)
+                                    h_num = to_float(h_attr)
+                                    x_num = to_float(x_attr) or 0.0
+                                    y_num = to_float(y_attr) or 0.0
+                                    matches_vb = (vb_w is not None and vb_h is not None and w_num == vb_w and h_num == vb_h and abs(x_num) < 1e-6 and abs(y_num) < 1e-6)
+                                    has_fill = ('fill:' in style and 'fill:none' not in style.replace(' ', '').lower()) or (fill and fill.lower() != 'none')
+                                    if has_fill and (is_percent_full or matches_vb):
+                                        try:
+                                            parent.remove(rect)
+                                            removed_any = True
+                                        except Exception:
+                                            pass
+                        if removed_any:
+                            cleaned = ET.tostring(root, encoding='utf-8')
+                            renderer = QSvgRenderer(QByteArray(cleaned))
+                        else:
+                            renderer = QSvgRenderer(path)
+                    except Exception:
+                        # Fallback to loading directly if parsing fails
+                        renderer = QSvgRenderer(path)
+                except Exception:
+                    renderer = QSvgRenderer(path)
                 if renderer.isValid():
                     pm = QPixmap(w, h)
                     pm.fill(Qt.transparent)
@@ -360,14 +368,13 @@ class MainWindow(QMainWindow):
 
                     # Create solid color pixmap and mask it with rendered alpha
                     tinted = QPixmap(w, h)
-                    tinted.fill(QColor(hex_color))
+                    tinted.fill(Qt.transparent)
                     p = QPainter(tinted)
+                    p.fillRect(0, 0, w, h, QColor(hex_color))
                     p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
                     p.drawPixmap(0, 0, pm)
                     p.end()
                     return QIcon(tinted)
-                else:
-                    print("[icons] QSvgRenderer could not load:", path)
 
             # Fallback: load via QIcon and paint it, then tint
             base = QIcon(path)
@@ -381,9 +388,25 @@ class MainWindow(QMainWindow):
             p.fillRect(0, 0, w, h, QColor(hex_color))
             p.end()
             return QIcon(pm)
-        except Exception as e:
-            print("[icons] Tinting failed:", e)
+        except Exception:
             return QIcon()
+
+    def _resolve_icon_path(self, candidates) -> str | None:
+        if isinstance(candidates, str):
+            candidates = (candidates,)
+        for name in candidates:
+            path = os.path.join(self._icons_dir, name)
+            if os.path.exists(path):
+                return path
+        return None
+
+    def _register_icon(self, widget, candidates, action=None) -> str | None:
+        path = self._resolve_icon_path(candidates)
+        if not path:
+            return None
+        self._icon_targets = [t for t in self._icon_targets if not (t.get('widget') is widget and t.get('action') is action)]
+        self._icon_targets.append({'kind': 'action' if action else 'button', 'widget': widget, 'action': action, 'path': path})
+        return path
 
     def _icon_color_for_theme(self) -> str:
         """Color for icons based on current theme: black on light, white on dark."""
@@ -445,8 +468,7 @@ class MainWindow(QMainWindow):
                 with open(qss_path, 'r', encoding='utf-8') as fh:
                     QApplication.instance().setStyleSheet(fh.read())
                     qss_loaded = True
-            except Exception as e:
-                print("[theme] Failed to load QSS:", e)
+            except Exception:
                 qss_loaded = False
 
         if not qss_loaded:
@@ -461,35 +483,22 @@ class MainWindow(QMainWindow):
             else:
                 QApplication.instance().setStyleSheet('')
 
-        # Update the theme toggle icon to be opposite color; if it fails, keep text
-        try:
-            if hasattr(self, 'theme_button') and getattr(self, '_theme_icon_path', None):
-                btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
-                dim = min(24, max(16, btn_h - 10))
-                # Icons should be BLACK on LIGHT theme and WHITE on DARK theme
-                color = '#000000' if not dark else '#FFFFFF'
-                icon = self._tint_icon(self._theme_icon_path, color, QSize(dim, dim))
-                if icon and not icon.isNull():
-                    self.theme_button.setIcon(icon)
-                    self.theme_button.setIconSize(QSize(dim, dim))
-                    # hide text only if icon is valid
-                    if self.theme_button.text():
-                        self.theme_button.setText('')
-                    print("[icons] Set theme toggle icon (dark=", dark, ", color=", color, ")")
-                else:
-                    # fallback: show text so the button isn't blank
-                    if not self.theme_button.text():
-                        self.theme_button.setText('Theme')
-                    self.theme_button.setIcon(QIcon())
-                    print("[icons] Failed to set theme toggle icon (icon is null)")
-        except Exception as e:
-            print("[icons] Theme toggle icon update error:", e)
+        if hasattr(self, 'theme_button') and getattr(self, '_theme_icon_path', None):
+            btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
+            dim = min(24, max(16, btn_h - 10))
+            color = '#000000' if not dark else '#FFFFFF'
+            icon = self._tint_icon(self._theme_icon_path, color, QSize(dim, dim))
+            if icon and not icon.isNull():
+                self.theme_button.setIcon(icon)
+                self.theme_button.setIconSize(QSize(dim, dim))
+                if self.theme_button.text():
+                    self.theme_button.setText('')
+            else:
+                if not self.theme_button.text():
+                    self.theme_button.setText('Theme')
+                self.theme_button.setIcon(QIcon())
 
-        # After theme application, update all other tinted icons
-        try:
-            self._update_all_tinted_icons()
-        except Exception:
-            pass
+        self._update_all_tinted_icons()
 
     def reload_files(self):
         print("Reload files")
@@ -560,24 +569,10 @@ class MainWindow(QMainWindow):
                 btn_layout = QHBoxLayout()
                 btn_3d = QPushButton("3D View")
                 btn_edit = QPushButton("Edit")
-                # set icons for the buttons (use SVGs if present, else fallbacks)
-                try:
-                    icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
-                    # support multiple local filenames for the same logical icon
-                    view_candidates = ('3dview.svg', '3dviewbutton.svg')
-                    edit_candidates = ('editmodel.svg', 'editbutton.svg')
-                    view_svg = next((os.path.join(icons_dir, n) for n in view_candidates if os.path.exists(os.path.join(icons_dir, n))), None)
-                    edit_svg = next((os.path.join(icons_dir, n) for n in edit_candidates if os.path.exists(os.path.join(icons_dir, n))), None)
-                    if view_svg:
-                        self._icon_targets.append({'kind': 'button', 'widget': btn_3d, 'action': None, 'path': view_svg})
-                        btn_3d.setIconSize(QSize(18, 18))
-                        print("[icons] 3D View icon registered:", view_svg)
-                    if edit_svg:
-                        self._icon_targets.append({'kind': 'button', 'widget': btn_edit, 'action': None, 'path': edit_svg})
-                        btn_edit.setIconSize(QSize(18, 18))
-                        print("[icons] Edit icon registered:", edit_svg)
-                except Exception:
-                    pass
+                if self._register_icon(btn_3d, ('3dview.svg', '3dviewbutton.svg')):
+                    btn_3d.setIconSize(QSize(18, 18))
+                if self._register_icon(btn_edit, ('editmodel.svg', 'editbutton.svg')):
+                    btn_edit.setIconSize(QSize(18, 18))
                 btn_layout.addWidget(btn_3d)
                 btn_layout.addWidget(btn_edit)
                 layout.addLayout(btn_layout)
@@ -650,7 +645,6 @@ if __name__ == "__main__":
         if os.path.exists(logo_path):
             app.setWindowIcon(QIcon(logo_path))
             window.setWindowIcon(QIcon(logo_path))
-            print('[icons] Window icon set:', logo_path)
             break
     window.setWindowTitle('zPrint')
     # Run an initial sizing pass after show to pick up platform metrics
