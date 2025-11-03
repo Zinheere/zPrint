@@ -15,6 +15,8 @@ class MainWindow(QMainWindow):
         self.apply_theme(self.dark_theme)
         # tracked card header labels for dynamic font resizing
         self.card_headers = []
+        self.card_subtexts = []
+        self.cards = []
         self.populate_gallery()
 
     def load_ui(self):
@@ -112,6 +114,31 @@ class MainWindow(QMainWindow):
         # apply an initial sizing pass for the top bar buttons
         self._resize_top_buttons(initial=True)
 
+        # Prepare references to inputs on the second top bar for resizing
+        self.top_bar_inputs = []
+        search = self.findChild(QLabel, 'searchBox') or (self.ui and self.ui.findChild(QLabel, 'searchBox'))
+        # searchBox is a QLineEdit; use a broad lookup in case the above didn't match QLabel
+        if search is None:
+            from PySide6.QtWidgets import QLineEdit
+            search = self.findChild(QLineEdit, 'searchBox') or (self.ui and self.ui.findChild(QLineEdit, 'searchBox'))
+        if search:
+            try:
+                # Make it expand horizontally and be fixed vertically (we'll set its height on resize)
+                search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            except Exception:
+                pass
+            self.top_bar_inputs.append(search)
+
+        from PySide6.QtWidgets import QComboBox
+        for name in ('sortDropdown', 'filterDropdown'):
+            dd = self.findChild(QComboBox, name) or (self.ui and self.ui.findChild(QComboBox, name))
+            if dd:
+                try:
+                    dd.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+                except Exception:
+                    pass
+                self.top_bar_inputs.append(dd)
+
     def resizeEvent(self, event):
         # Update button sizes whenever the main window resizes so they scale with the window
         try:
@@ -132,15 +159,17 @@ class MainWindow(QMainWindow):
             # theme button should be square; detect by objectName
             if btn.objectName() == 'btnThemeToggle':
                 btn.setFixedSize(QSize(target_h, target_h))
-                btn.setIconSize(QSize(max(8, target_h - 8), max(8, target_h - 8)))
+                # Cap icon size so it doesn't get oversized on big windows
+                icon_dim = min(24, max(12, target_h - 12))
+                btn.setIconSize(QSize(icon_dim, icon_dim))
             else:
                 # allow width to expand while fixing height
                 btn.setMinimumHeight(target_h)
                 btn.setMaximumHeight(target_h)
                 # scale the button's font size so the text rescales with the button
                 try:
-                    # make top-bar button text larger; only Add Model is bold
-                    font_pt = max(10, int(target_h * 0.42))
+                    # make top-bar button text scale but cap it to avoid huge fonts
+                    font_pt = min(16, max(10, int(target_h * 0.34)))
                     f = btn.font() or QFont()
                     f.setFamily('Inter')
                     f.setPointSize(font_pt)
@@ -153,10 +182,34 @@ class MainWindow(QMainWindow):
                     # don't fail on font errors
                     pass
 
+        # Resize the search bar and dropdowns to match the top bar height and scale fonts
+        try:
+            font_pt = max(10, int(target_h * 0.40))
+            from PySide6.QtWidgets import QLineEdit, QComboBox
+            for w in getattr(self, 'top_bar_inputs', []):
+                try:
+                    w.setMinimumHeight(target_h)
+                    w.setMaximumHeight(target_h)
+                    f = w.font() or QFont()
+                    f.setFamily('Inter')
+                    f.setPointSize(font_pt)
+                    f.setBold(False)
+                    w.setFont(f)
+                    # If this is a combo box, also adjust the view font for consistency
+                    if isinstance(w, QComboBox) and w.view():
+                        vf = w.view().font() or QFont()
+                        vf.setFamily('Inter')
+                        vf.setPointSize(max(9, font_pt - 1))
+                        w.view().setFont(vf)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Update card header fonts so they scale with window size as well
         try:
-            # pick a card header font size based on window height, clamped to 12-20
-            card_pt = max(12, min(20, int(win_h * 0.028)))
+            # pick a card header font size based on window height, clamped to 12-18
+            card_pt = max(12, min(18, int(win_h * 0.026)))
             for lbl in getattr(self, 'card_headers', []):
                 try:
                     lf = lbl.font() or QFont()
@@ -168,8 +221,8 @@ class MainWindow(QMainWindow):
                     lbl.setStyleSheet('background: transparent;')
                 except Exception:
                     pass
-            # card subtext slightly smaller but still bold
-            sub_pt = max(10, min(18, int(card_pt * 0.85)))
+            # card subtext slightly smaller and NOT bold
+            sub_pt = max(10, min(15, int(card_pt * 0.85)))
             for lbl in getattr(self, 'card_subtexts', []):
                 try:
                     lf = lbl.font() or QFont()
@@ -181,6 +234,12 @@ class MainWindow(QMainWindow):
                     lbl.setStyleSheet('background: transparent;')
                 except Exception:
                     pass
+        except Exception:
+            pass
+
+        # Re-layout the gallery based on current width to adjust columns responsively
+        try:
+            self.relayout_gallery()
         except Exception:
             pass
 
@@ -290,8 +349,20 @@ class MainWindow(QMainWindow):
             # nothing to attach to
             return
 
-        for row in range(2):
-            for col in range(2):
+        # Keep references for responsive relayout
+        self.gallery_container = container
+        self.gallery_layout = gallery_layout
+        # Optionally tune spacing/margins for the grid
+        try:
+            self.gallery_layout.setHorizontalSpacing(8)
+            self.gallery_layout.setVerticalSpacing(8)
+            self.gallery_layout.setContentsMargins(6, 6, 6, 6)
+        except Exception:
+            pass
+
+        # Only populate cards once
+        if not self.cards:
+            for i in range(4):
                 card = QWidget()
                 layout = QVBoxLayout(card)
                 layout.setContentsMargins(5, 5, 5, 5)
@@ -307,7 +378,7 @@ class MainWindow(QMainWindow):
                 thumbnail.setScaledContents(True)
                 layout.addWidget(thumbnail)
 
-                name_label = QLabel(f"Model {row*2 + col +1}")
+                name_label = QLabel(f"Model {i + 1}")
                 # mark as a card header and track for dynamic font resizing (bold, not blue)
                 name_label.setProperty('cardHeader', True)
                 # remove any boxed background so the text appears directly on the card
@@ -321,8 +392,6 @@ class MainWindow(QMainWindow):
                 time_label.setStyleSheet('background: transparent;')
                 layout.addWidget(time_label)
                 # store reference for dynamic resizing
-                if not hasattr(self, 'card_subtexts'):
-                    self.card_subtexts = []
                 self.card_subtexts.append(time_label)
 
                 btn_layout = QHBoxLayout()
@@ -344,7 +413,50 @@ class MainWindow(QMainWindow):
                 # mark the card widget for QSS
                 card.setProperty('card', True)
 
-                gallery_layout.addWidget(card, row, col)
+                self.cards.append(card)
+
+        # Initial layout
+        self.relayout_gallery()
+
+    def relayout_gallery(self):
+        """Compute number of columns based on available width and re-add cards to grid."""
+        container = getattr(self, 'gallery_container', None)
+        layout = getattr(self, 'gallery_layout', None)
+        if container is None or layout is None or not self.cards:
+            return
+
+        # Determine available width inside the scroll area contents
+        try:
+            margins = layout.contentsMargins()
+            available_w = max(1, container.width() - (margins.left() + margins.right()))
+            spacing = layout.horizontalSpacing() if layout.horizontalSpacing() is not None else 6
+        except Exception:
+            available_w = max(1, container.width())
+            spacing = 6
+
+        # Choose a minimum card width and compute how many columns fit
+        min_card_w = 240
+        cols = max(1, int((available_w + spacing) / (min_card_w + spacing)))
+
+        # Clear current layout placements (but keep widgets alive)
+        try:
+            while layout.count():
+                item = layout.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    layout.removeWidget(w)
+        except Exception:
+            pass
+
+        # Add cards row by row
+        r = 0
+        c = 0
+        for card in self.cards:
+            layout.addWidget(card, r, c)
+            c += 1
+            if c >= cols:
+                c = 0
+                r += 1
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
