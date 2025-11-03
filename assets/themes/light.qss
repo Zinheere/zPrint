@@ -124,3 +124,40 @@ QLabel[thumbnail="true"] {
   border: 1px solid #E0E6ED;
 }
 
+/* Modern scrollbars */
+QScrollBar:vertical {
+  background: transparent;
+  width: 12px;
+  margin: 6px 3px 6px 0px;
+  border-radius: 6px;
+}
+QScrollBar:horizontal {
+  background: transparent;
+  height: 12px;
+  margin: 0px 6px 3px 6px;
+  border-radius: 6px;
+}
+QScrollBar::handle:vertical {
+  background-color: #CBD4E1;
+  border-radius: 6px;
+  min-height: 28px;
+}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:vertical:pressed {
+  background-color: #AFC3E6;
+}
+QScrollBar::handle:horizontal {
+  background-color: #CBD4E1;
+  border-radius: 6px;
+  min-width: 28px;
+}
+QScrollBar::handle:horizontal:hover, QScrollBar::handle:horizontal:pressed {
+  background-color: #AFC3E6;
+}
+QScrollBar::add-line, QScrollBar::sub-line {
+  height: 0px;
+  width: 0px;
+}
+QScrollBar::add-page, QScrollBar::sub-page {
+  background: transparent;
+}
+

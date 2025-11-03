@@ -4,13 +4,27 @@ import json
 import re
 from datetime import datetime
 from functools import partial
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QSizePolicy
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QMainWindow,
+    QMessageBox,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QSizePolicy,
+    QWidget,
+    QProgressBar,
+)
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, Qt, QSize
+from PySide6.QtCore import QFile, Qt, QSize, QEvent, QTimer
 from PySide6.QtGui import QIcon, QFont, QPixmap
 
 from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
+from ui.new_model_dialog import NewModelDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -27,6 +41,9 @@ class MainWindow(QMainWindow):
         self.search_box = None
         self.sort_dropdown = None
         self.filter_dropdown = None
+        self.loading_overlay = None
+        self.loading_label = None
+        self.loading_progress = None
         self.load_ui()
         # apply the chosen theme immediately on startup
         self.apply_theme(self.dark_theme)
@@ -37,6 +54,7 @@ class MainWindow(QMainWindow):
         self._models = []
         self._visible_models = []
         self._preview_cache = {}
+        self._thumbnail_sources = {}
         self._search_term = ''
         self._current_material_filter = 'All Materials'
         self._current_sort_index = 0
@@ -179,10 +197,16 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+        self._create_loading_overlay()
+
     def resizeEvent(self, event):
         # Update button sizes whenever the main window resizes so they scale with the window
         try:
             self._resize_top_buttons()
+        except Exception:
+            pass
+        try:
+            self._update_loading_overlay_geometry()
         except Exception:
             pass
         super().resizeEvent(event)
@@ -484,17 +508,48 @@ class MainWindow(QMainWindow):
                 return None
         return None
 
+    def _prepare_gallery_layout(self) -> bool:
+        container = getattr(self, 'gallery_container', None)
+        layout = getattr(self, 'gallery_layout', None)
+        if container is not None and layout is not None:
+            return True
+
+        container = self.findChild(QWidget, 'scrollAreaWidgetContents')
+        if container is None and self.ui is not None:
+            container = self.ui.findChild(QWidget, 'scrollAreaWidgetContents')
+        if container is None:
+            return False
+
+        layout = container.layout()
+        if layout is None:
+            return False
+
+        self.gallery_container = container
+        self.gallery_layout = layout
+        try:
+            self.gallery_layout.setHorizontalSpacing(8)
+            self.gallery_layout.setVerticalSpacing(8)
+            self.gallery_layout.setContentsMargins(6, 6, 6, 6)
+        except Exception:
+            pass
+        return True
+
     def _clear_gallery(self):
         # Remove previous card widgets and associated icon registrations
         if hasattr(self, 'cards') and self.cards:
             for card in self.cards:
                 for btn in card.findChildren(QPushButton):
                     self._icon_targets = [t for t in self._icon_targets if t.get('widget') is not btn]
+                for lbl in card.findChildren(QLabel):
+                    if lbl in self._thumbnail_sources:
+                        lbl.removeEventFilter(self)
+                        self._thumbnail_sources.pop(lbl, None)
                 card.deleteLater()
         self.cards = []
         self.card_headers = []
         self.card_subtexts = []
         self._visible_models = []
+        self._thumbnail_sources = {}
         if hasattr(self, 'gallery_layout') and self.gallery_layout is not None:
             while self.gallery_layout.count():
                 item = self.gallery_layout.takeAt(0)
@@ -560,10 +615,17 @@ class MainWindow(QMainWindow):
                                 self._preview_cache[cache_key] = generated
 
             if thumbnail_pixmap and not thumbnail_pixmap.isNull():
+                if thumbnail not in self._thumbnail_sources:
+                    thumbnail.installEventFilter(self)
+                self._thumbnail_sources[thumbnail] = thumbnail_pixmap
                 thumbnail.setPixmap(thumbnail_pixmap)
                 thumbnail.setAlignment(Qt.AlignCenter)
+                self._apply_thumbnail_pixmap(thumbnail)
             else:
                 thumbnail.setText('No Preview')
+                if thumbnail in self._thumbnail_sources:
+                    thumbnail.removeEventFilter(self)
+                    self._thumbnail_sources.pop(thumbnail, None)
             layout.addWidget(thumbnail)
 
             name_label = QLabel(model.get('name', ''))
@@ -603,6 +665,21 @@ class MainWindow(QMainWindow):
             self._update_all_tinted_icons()
         except Exception:
             pass
+
+    def _apply_thumbnail_pixmap(self, label: QLabel) -> None:
+        pixmap = self._thumbnail_sources.get(label)
+        if not pixmap or pixmap.isNull():
+            return
+        size = label.size()
+        if size.width() <= 0 or size.height() <= 0:
+            return
+        scaled = pixmap.scaled(size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        if scaled.width() > size.width() or scaled.height() > size.height():
+            crop_x = max(0, (scaled.width() - size.width()) // 2)
+            crop_y = max(0, (scaled.height() - size.height()) // 2)
+            scaled = scaled.copy(crop_x, crop_y, min(size.width(), scaled.width()), min(size.height(), scaled.height()))
+        label.setPixmap(scaled)
+        label.setAlignment(Qt.AlignCenter)
 
     def _populate_material_filters(self, models: list[dict]):
         if not self.filter_dropdown:
@@ -706,6 +783,11 @@ class MainWindow(QMainWindow):
         self._current_material_filter = selected or 'All Materials'
         self._apply_model_filters()
 
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Resize and obj in self._thumbnail_sources:
+            self._apply_thumbnail_pixmap(obj)  # type: ignore[arg-type]
+        return super().eventFilter(obj, event)
+
     def _icon_color_for_theme(self) -> str:
         """Color for icons based on current theme: black on light, white on dark."""
         return '#000000' if not getattr(self, 'dark_theme', False) else '#FFFFFF'
@@ -781,11 +863,18 @@ class MainWindow(QMainWindow):
             else:
                 QApplication.instance().setStyleSheet('')
 
-        if hasattr(self, 'theme_button') and getattr(self, '_theme_icon_path', None):
+        theme_icon_candidates = ('lightmode.svg', 'sun.svg', 'toggletheme.svg') if dark else ('darkmode.svg', 'moon.svg', 'toggletheme.svg')
+        theme_icon_path = self._resolve_icon_path(theme_icon_candidates)
+        if not theme_icon_path:
+            theme_icon_path = getattr(self, '_theme_icon_path', None)
+        else:
+            self._theme_icon_path = theme_icon_path
+
+        if hasattr(self, 'theme_button') and theme_icon_path:
             btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
             dim = min(24, max(16, btn_h - 10))
             color = '#000000' if not dark else '#FFFFFF'
-            icon = self._tint_icon(self._theme_icon_path, color, QSize(dim, dim))
+            icon = self._tint_icon(theme_icon_path, color, QSize(dim, dim))
             if icon and not icon.isNull():
                 self.theme_button.setIcon(icon)
                 self.theme_button.setIconSize(QSize(dim, dim))
@@ -797,19 +886,146 @@ class MainWindow(QMainWindow):
                 self.theme_button.setIcon(QIcon())
 
         self._update_all_tinted_icons()
-        if getattr(self, 'gallery_layout', None):
-            self._apply_model_filters()
+
+    def _load_ui_widget(self, relative_path: str, parent=None):
+        path = os.path.join(self.app_dir, relative_path)
+        if not os.path.exists(path):
+            return None
+        ui_file = QFile(path)
+        if not ui_file.open(QFile.ReadOnly):
+            return None
+        loader = QUiLoader()
+        try:
+            widget = loader.load(ui_file, parent)
+        except Exception:
+            widget = None
+        finally:
+            ui_file.close()
+        return widget
+
+    def _create_loading_overlay(self):
+        central = self.centralWidget()
+        if central is None:
+            return
+        if self.loading_overlay is not None and self.loading_overlay.parent() is central:
+            self._update_loading_overlay_geometry()
+            return
+
+        overlay = QWidget(central)
+        overlay.setObjectName('loadingOverlay')
+        overlay.setAttribute(Qt.WA_StyledBackground, True)
+        overlay.setStyleSheet('background-color: rgba(12, 16, 24, 210);')
+        overlay.hide()
+
+        layout = QVBoxLayout(overlay)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        content = self._load_ui_widget(os.path.join('ui', 'loading_screen.ui'), overlay)
+        self.loading_label = None
+        self.loading_progress = None
+
+        if content is not None:
+            layout.addWidget(content)
+            self.loading_label = content.findChild(QLabel, 'loadingLabel')
+            self.loading_progress = content.findChild(QProgressBar, 'loadingProgress')
+            if self.loading_label is None:
+                self.loading_label = content.findChild(QLabel)
+            if self.loading_progress is None:
+                self.loading_progress = content.findChild(QProgressBar)
+        else:
+            fallback = QWidget(overlay)
+            fallback_layout = QVBoxLayout(fallback)
+            fallback_layout.setContentsMargins(48, 48, 48, 48)
+            fallback_layout.setSpacing(12)
+            fallback_layout.setAlignment(Qt.AlignCenter)
+
+            message = QLabel('Loading…', fallback)
+            message.setAlignment(Qt.AlignCenter)
+            message.setStyleSheet('color: #FFFFFF; font-size: 18px; font-weight: 600;')
+
+            progress = QProgressBar(fallback)
+            progress.setRange(0, 0)
+            progress.setTextVisible(False)
+            progress.setFixedWidth(240)
+            progress.setStyleSheet(
+                'QProgressBar {border: 1px solid rgba(255,255,255,90); border-radius: 10px; '
+                'background: rgba(255,255,255,28); } '
+                'QProgressBar::chunk { background: rgba(255,255,255,190); border-radius: 10px; }'
+            )
+
+            fallback_layout.addWidget(message)
+            fallback_layout.addSpacing(6)
+            fallback_layout.addWidget(progress, alignment=Qt.AlignCenter)
+            layout.addWidget(fallback)
+
+            self.loading_label = message
+            self.loading_progress = progress
+
+        self.loading_overlay = overlay
+        self._update_loading_overlay_geometry()
+        overlay.raise_()
+
+    def _update_loading_overlay_geometry(self):
+        if self.loading_overlay is None:
+            return
+        central = self.centralWidget()
+        if central is None:
+            return
+        self.loading_overlay.setGeometry(central.rect())
+
+    def _show_loading(self, message: str = 'Loading…'):  # pragma: no cover - UI behaviour
+        self._create_loading_overlay()
+        if self.loading_overlay is None:
+            return
+        if self.loading_label is not None:
+            self.loading_label.setText(message)
+        self._update_loading_overlay_geometry()
+        self.loading_overlay.raise_()
+        self.loading_overlay.show()
+        QApplication.processEvents()
+
+    def _hide_loading(self):  # pragma: no cover - UI behaviour
+        if self.loading_overlay is not None:
+            self.loading_overlay.hide()
 
     def reload_files(self):
-        self._models = self._load_models_data()
-        self._populate_material_filters(self._models)
-        self._apply_model_filters()
+        self._show_loading('Refreshing models…')
+        QTimer.singleShot(0, self._reload_files_async)
+
+    def _reload_files_async(self):
+        try:
+            if not self._prepare_gallery_layout():
+                return
+            self._models = self._load_models_data()
+            self._populate_material_filters(self._models)
+            self._apply_model_filters()
+        finally:
+            self._hide_loading()
 
     def import_files(self):
         print("Import files")
 
     def add_model(self):
-        print("Add new model")
+        try:
+            dialog = NewModelDialog(self.app_dir, self.config, getattr(self, 'dark_theme', False), self)
+        except Exception as exc:
+            QMessageBox.critical(self, 'New Model', f'Unable to open dialog:\n{exc}')
+            return
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        result = getattr(dialog, 'result_data', {}) or {}
+        location = (result.get('location') or '').lower()
+        base_path = result.get('base_path')
+        if base_path:
+            if location == 'local':
+                self.config['local_path'] = base_path
+            elif location == 'microsd':
+                self.config['microsd_path'] = base_path
+        self.models_root = self._resolve_models_root()
+        self.reload_files()
 
     def view_model(self, model_data: dict):
         print(f"Preview 3D model: {model_data.get('name')} from {model_data.get('folder')}")
@@ -818,30 +1034,18 @@ class MainWindow(QMainWindow):
         print(f"Edit model metadata: {model_data.get('name')} from {model_data.get('folder')}")
 
     def populate_gallery(self):
-        # find the scroll area contents widget and its layout that holds the gallery
-        container = self.findChild(QWidget, 'scrollAreaWidgetContents')
-        if container is None and self.ui is not None:
-            container = self.ui.findChild(QWidget, 'scrollAreaWidgetContents')
+        self._show_loading('Loading models…')
+        QTimer.singleShot(0, self._populate_gallery_async)
 
-        gallery_layout = container.layout() if container is not None else None
-        if gallery_layout is None:
-            # nothing to attach to
-            return
-
-        # Keep references for responsive relayout
-        self.gallery_container = container
-        self.gallery_layout = gallery_layout
-        # Optionally tune spacing/margins for the grid
+    def _populate_gallery_async(self):
         try:
-            self.gallery_layout.setHorizontalSpacing(8)
-            self.gallery_layout.setVerticalSpacing(8)
-            self.gallery_layout.setContentsMargins(6, 6, 6, 6)
-        except Exception:
-            pass
-
-        self._models = self._load_models_data()
-        self._populate_material_filters(self._models)
-        self._apply_model_filters()
+            if not self._prepare_gallery_layout():
+                return
+            self._models = self._load_models_data()
+            self._populate_material_filters(self._models)
+            self._apply_model_filters()
+        finally:
+            self._hide_loading()
 
     def relayout_gallery(self):
         """Compute number of columns based on available width and re-add cards to grid."""

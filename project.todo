@@ -1,11 +1,15 @@
 # Project TODO
 - [x] Load models from configuration and hydrate gallery cards
 - [x] Enable search, sorting, and material filtering controls
-- [ ] Implement import workflow for new models
+- [x] Implement import workflow for new models (dialog + packaging)
+- [x] Generate STL thumbnails with adaptive cropping and caching
+- [x] Add loading overlay sourced from UI file for async refreshes
+- [x] Apply theme toggle with tinted icons and persisted preference
+- [x] Modernize scrollbars in light and dark themes
 - [ ] Add 3D preview display for selected model
 - [ ] Build metadata edit dialog and persistence
-Implement "add model" button to show popup
-Make "import" button select a models folder
+- [x] Implement "Add Model" button to show popup
+- [ ] Make "Import" button select a models folder
 
 
 

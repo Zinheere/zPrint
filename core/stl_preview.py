@@ -47,6 +47,7 @@ def render_stl_preview(
 	axis = figure.add_subplot(111, projection="3d")
 	axis.set_facecolor(background)
 	axis.set_axis_off()
+	axis.set_position([0.0, 0.0, 1.0, 1.0])
 
 	triangles = mesh.triangles
 	if isinstance(triangles, np.ndarray) and triangles.size:
@@ -134,12 +135,13 @@ def _configure_view(axis, mesh: trimesh.Trimesh) -> None:
 		return
 	lower, upper = bounds
 	extents = upper - lower
-	max_extent = float(np.max(extents)) or 1.0
-	center = mesh.centroid
-	padding = max_extent * 0.35
+	half_extents = extents / 2.0
+	max_half_extent = float(np.max(half_extents)) or 1.0
+	radius = max_half_extent * 1.2
+	center = (lower + upper) / 2.0
 
 	for center_value, axis_setter in zip(center, (axis.set_xlim, axis.set_ylim, axis.set_zlim)):
-		axis_setter(center_value - padding, center_value + padding)
+		axis_setter(center_value - radius, center_value + radius)
 
 	axis.set_box_aspect((1.0, 1.0, 1.0))
 
