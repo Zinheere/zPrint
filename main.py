@@ -57,11 +57,18 @@ class MainWindow(QMainWindow):
             svg_path = os.path.join(icons_dir, 'toggletheme.svg')
             # store path for tinting; apply_theme will set the appropriate tinted icon
             self._theme_icon_path = svg_path if os.path.exists(svg_path) else None
-            btn.setText('')
+            if self._theme_icon_path is None:
+                print("[icons] Theme toggle SVG not found at:", svg_path)
+            else:
+                print("[icons] Found theme toggle SVG:", svg_path)
             btn.setToolTip('Toggle theme')
             btn.clicked.connect(self.toggle_theme)
-            # make it resize-friendly; square sizing enforced in resizeEvent
-            btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            # If we have an icon, prefer icon-only and square; otherwise keep text from .ui
+            if self._theme_icon_path:
+                btn.setText('')
+                btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            else:
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             # keep reference so we can swap the icon color when theme changes
             self.theme_button = btn
             # placeholders for tinted icons (computed lazily)
@@ -73,7 +80,7 @@ class MainWindow(QMainWindow):
         if btn:
             btn.clicked.connect(self.reload_files)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # try to add an icon if present
+            # only add an icon if present in assets/icons
             try:
                 icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
                 for cand in ('reload.svg', 'refresh.svg'):
@@ -89,7 +96,7 @@ class MainWindow(QMainWindow):
         if btn:
             btn.clicked.connect(self.import_files)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # try to add an icon if present
+            # only add an icon if present in assets/icons
             try:
                 icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
                 for cand in ('import.svg', 'upload.svg', 'open.svg'):
@@ -105,7 +112,7 @@ class MainWindow(QMainWindow):
         if btn:
             btn.clicked.connect(self.add_model)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # try to add an icon if present
+            # only add an icon if present in assets/icons
             try:
                 icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
                 for cand in ('addmodel.svg', 'add.svg', 'plus.svg', 'new.svg'):
@@ -115,6 +122,8 @@ class MainWindow(QMainWindow):
                         break
             except Exception:
                 pass
+            # keep a direct reference for sizing comparisons with inputs
+            self._btn_add_model = btn
             self.top_bar_buttons.append(btn)
 
         # Move the top-row widgets into a new container widget so we can style the bar
@@ -155,13 +164,13 @@ class MainWindow(QMainWindow):
             try:
                 # Make it expand horizontally and be fixed vertically (we'll set its height on resize)
                 search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                # add leading search icon if available
+                # add leading search icon only if available in assets/icons
                 try:
                     icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+                    from PySide6.QtWidgets import QLineEdit as _QLE
                     for cand in ('search.svg', 'magnify.svg', 'magnifier.svg'):
                         p = os.path.join(icons_dir, cand)
                         if os.path.exists(p):
-                            from PySide6.QtWidgets import QLineEdit as _QLE
                             search.addAction(QIcon(p), _QLE.LeadingPosition)
                             break
                 except Exception:
@@ -180,6 +189,16 @@ class MainWindow(QMainWindow):
                     pass
                 self.top_bar_inputs.append(dd)
 
+        # Align the second top bar layout margins/spacings so height matches the first bar
+        try:
+            from PySide6.QtWidgets import QHBoxLayout as _QHB
+            bar2 = self.findChild(_QHB, 'topBar2Layout') or (self.ui and self.ui.findChild(_QHB, 'topBar2Layout'))
+            if bar2:
+                bar2.setContentsMargins(6, 6, 6, 6)
+                bar2.setSpacing(6)
+        except Exception:
+            pass
+
     def resizeEvent(self, event):
         # Update button sizes whenever the main window resizes so they scale with the window
         try:
@@ -197,54 +216,78 @@ class MainWindow(QMainWindow):
         target_h = max(28, min(56, int(win_h * 0.06)))
 
         for btn in self.top_bar_buttons:
-            # theme button should be square; detect by objectName
-            if btn.objectName() == 'btnThemeToggle':
+            # theme button square only if an SVG icon is present
+            if btn.objectName() == 'btnThemeToggle' and getattr(self, '_theme_icon_path', None):
                 btn.setFixedSize(QSize(target_h, target_h))
                 # Cap icon size so it doesn't get oversized on big windows
                 icon_dim = min(24, max(12, target_h - 12))
-                btn.setIconSize(QSize(icon_dim, icon_dim))
+                try:
+                    btn.setIconSize(QSize(icon_dim, icon_dim))
+                except Exception:
+                    pass
             else:
                 # allow width to expand while fixing height
                 btn.setMinimumHeight(target_h)
                 btn.setMaximumHeight(target_h)
-                # scale the button's font size so the text rescales with the button
-                try:
-                    # make top-bar button text scale but cap it to avoid huge fonts
-                    font_pt = min(16, max(10, int(target_h * 0.34)))
-                    f = btn.font() or QFont()
-                    f.setFamily('Inter')
-                    f.setPointSize(font_pt)
-                    if btn.objectName() == 'btnAddModel':
-                        f.setBold(True)
-                    else:
-                        f.setBold(False)
-                    btn.setFont(f)
-                    # Adjust icon size for icon-bearing buttons
-                    if not btn.icon().isNull():
-                        icon_dim = min(22, max(12, target_h - 14))
-                        btn.setIconSize(QSize(icon_dim, icon_dim))
-                except Exception:
-                    # don't fail on font errors
-                    pass
+            # scale the button's font size so the text rescales with the button
+            try:
+                # make top-bar button text scale but cap it to avoid huge fonts
+                font_pt = min(16, max(10, int(target_h * 0.34)))
+                f = btn.font() or QFont()
+                f.setFamily('Inter')
+                f.setPointSize(font_pt)
+                if btn.objectName() == 'btnAddModel':
+                    f.setBold(True)
+                else:
+                    f.setBold(False)
+                btn.setFont(f)
+                # Adjust icon size for icon-bearing buttons (only if explicitly set)
+                if not btn.icon().isNull():
+                    icon_dim = min(22, max(12, target_h - 14))
+                    btn.setIconSize(QSize(icon_dim, icon_dim))
+            except Exception:
+                # don't fail on font errors
+                pass
 
         # Resize the search bar and dropdowns to match the top bar height and scale fonts
         try:
-            font_pt = max(10, int(target_h * 0.40))
             from PySide6.QtWidgets import QLineEdit, QComboBox
+            # Determine input font to match the New Model button's font size
+            try:
+                add_font_pt = None
+                if hasattr(self, '_btn_add_model') and self._btn_add_model is not None:
+                    add_font_pt = self._btn_add_model.font().pointSize()
+                    if add_font_pt is None or add_font_pt <= 0:
+                        add_font_pt = None
+                if add_font_pt is None:
+                    # fallback: compute similarly to button sizing (same cap)
+                    add_font_pt = min(16, max(10, int(target_h * 0.34)))
+            except Exception:
+                add_font_pt = min(16, max(10, int(target_h * 0.34)))
+            # determine the max height to use based on the Add Model button's max height
+            btn_max_h = target_h
+            try:
+                if hasattr(self, '_btn_add_model') and self._btn_add_model is not None:
+                    # prefer the button's explicit maximumHeight if set; fall back to current height/size hint
+                    btn_max_h = self._btn_add_model.maximumHeight() or self._btn_add_model.height() or self._btn_add_model.sizeHint().height() or target_h
+            except Exception:
+                btn_max_h = target_h
             for w in getattr(self, 'top_bar_inputs', []):
                 try:
-                    w.setMinimumHeight(target_h)
-                    w.setMaximumHeight(target_h)
+                    # make inputs' max height match the Add Model button's max side
+                    w.setMaximumHeight(btn_max_h)
+                    # keep min height aligned as well to avoid jitter
+                    w.setMinimumHeight(btn_max_h)
                     f = w.font() or QFont()
                     f.setFamily('Inter')
-                    f.setPointSize(font_pt)
+                    f.setPointSize(add_font_pt)
                     f.setBold(False)
                     w.setFont(f)
                     # If this is a combo box, also adjust the view font for consistency
                     if isinstance(w, QComboBox) and w.view():
                         vf = w.view().font() or QFont()
                         vf.setFamily('Inter')
-                        vf.setPointSize(max(9, font_pt - 1))
+                        vf.setPointSize(max(9, add_font_pt - 1))
                         w.view().setFont(vf)
                 except Exception:
                     pass
@@ -349,27 +392,33 @@ class MainWindow(QMainWindow):
 
         # Update the theme toggle icon to be the opposite color of the button background
         try:
-            if hasattr(self, 'theme_button') and self._theme_icon_path:
+            if hasattr(self, 'theme_button') and getattr(self, '_theme_icon_path', None):
                 # lazily compute tinted icons
-                if self._theme_icon_white is None:
+                if getattr(self, '_theme_icon_white', None) is None:
                     self._theme_icon_white = self._tint_icon(self._theme_icon_path, '#FFFFFF')
-                if self._theme_icon_black is None:
+                if getattr(self, '_theme_icon_black', None) is None:
                     self._theme_icon_black = self._tint_icon(self._theme_icon_path, '#000000')
 
+                chosen_icon = None
                 if dark:
-                    # dark mode: button background is black -> icon should be white
-                    if self._theme_icon_white:
-                        self.theme_button.setIcon(self._theme_icon_white)
+                    if self._theme_icon_white and not self._theme_icon_white.isNull():
+                        chosen_icon = self._theme_icon_white
                 else:
-                    # light mode: button background is white -> icon should be black
-                    if self._theme_icon_black:
-                        self.theme_button.setIcon(self._theme_icon_black)
-                # keep icon size consistent with button
-                try:
-                    btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
-                    self.theme_button.setIconSize(QSize(max(8, btn_h - 8), max(8, btn_h - 8)))
-                except Exception:
-                    pass
+                    if self._theme_icon_black and not self._theme_icon_black.isNull():
+                        chosen_icon = self._theme_icon_black
+
+                if chosen_icon and not chosen_icon.isNull():
+                    self.theme_button.setIcon(chosen_icon)
+                    print("[icons] Set theme toggle icon (dark=", dark, ")")
+                    # keep icon size consistent with button
+                    try:
+                        btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
+                        dim = min(24, max(12, btn_h - 12))
+                        self.theme_button.setIconSize(QSize(dim, dim))
+                    except Exception:
+                        pass
+                else:
+                    print("[icons] Failed to set theme toggle icon (icon is null)")
         except Exception:
             pass
 
@@ -442,16 +491,24 @@ class MainWindow(QMainWindow):
                 btn_layout = QHBoxLayout()
                 btn_3d = QPushButton("3D View")
                 btn_edit = QPushButton("Edit")
-                # set icons for the buttons (use SVGs)
-                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
-                view_svg = os.path.join(icons_dir, '3dview.svg')
-                edit_svg = os.path.join(icons_dir, 'editmodel.svg')
-                if os.path.exists(view_svg):
-                    btn_3d.setIcon(QIcon(view_svg))
-                    btn_3d.setIconSize(QSize(18, 18))
-                if os.path.exists(edit_svg):
-                    btn_edit.setIcon(QIcon(edit_svg))
-                    btn_edit.setIconSize(QSize(18, 18))
+                # set icons for the buttons (use SVGs if present, else fallbacks)
+                try:
+                    icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+                    # support multiple local filenames for the same logical icon
+                    view_candidates = ('3dview.svg', '3dviewbutton.svg')
+                    edit_candidates = ('editmodel.svg', 'editbutton.svg')
+                    view_svg = next((os.path.join(icons_dir, n) for n in view_candidates if os.path.exists(os.path.join(icons_dir, n))), None)
+                    edit_svg = next((os.path.join(icons_dir, n) for n in edit_candidates if os.path.exists(os.path.join(icons_dir, n))), None)
+                    if view_svg:
+                        btn_3d.setIcon(QIcon(view_svg))
+                        btn_3d.setIconSize(QSize(18, 18))
+                        print("[icons] 3D View icon set:", view_svg)
+                    if edit_svg:
+                        btn_edit.setIcon(QIcon(edit_svg))
+                        btn_edit.setIconSize(QSize(18, 18))
+                        print("[icons] Edit icon set:", edit_svg)
+                except Exception:
+                    pass
                 btn_layout.addWidget(btn_3d)
                 btn_layout.addWidget(btn_edit)
                 layout.addLayout(btn_layout)
@@ -512,11 +569,15 @@ if __name__ == "__main__":
         pass
     window = MainWindow()
     window.show()
-    # set application/window icon and title
-    logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'logo.svg')
-    if os.path.exists(logo_path):
-        app.setWindowIcon(QIcon(logo_path))
-        window.setWindowIcon(QIcon(logo_path))
+    # set application/window icon and title if a logo exists (support common local names)
+    icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+    for logo_name in ('logo.svg', 'applogo.svg'):
+        logo_path = os.path.join(icons_dir, logo_name)
+        if os.path.exists(logo_path):
+            app.setWindowIcon(QIcon(logo_path))
+            window.setWindowIcon(QIcon(logo_path))
+            print('[icons] Window icon set:', logo_path)
+            break
     window.setWindowTitle('zPrint')
     # Run an initial sizing pass after show to pick up platform metrics
     from PySide6.QtCore import QTimer
