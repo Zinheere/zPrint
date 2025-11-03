@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import re
+import shutil
 from datetime import datetime
 from functools import partial
 from PySide6.QtWidgets import (
@@ -27,6 +28,7 @@ from PySide6.QtGui import QIcon, QFont, QPixmap
 from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
 from ui.new_model_dialog import NewModelDialog
+from ui.edit_model_dialog import EditModelDialog
 
 APP_VERSION = "0.20 Beta"
 
@@ -1184,7 +1186,56 @@ class MainWindow(QMainWindow):
         print(f"Preview 3D model: {model_data.get('name')} from {model_data.get('folder')}")
 
     def edit_model(self, model_data: dict):
-        print(f"Edit model metadata: {model_data.get('name')} from {model_data.get('folder')}")
+        if not model_data:
+            return
+
+        try:
+            dialog = EditModelDialog(model_data, self)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Edit Model', f'Unable to open editor:\n{exc}')
+            return
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        folder = model_data.get('folder')
+        if dialog.delete_requested:
+            if not folder or not os.path.isdir(folder):
+                QMessageBox.critical(self, 'Delete Model', 'Model folder could not be located on disk.')
+                return
+            try:
+                shutil.rmtree(folder)
+            except Exception as exc:
+                QMessageBox.critical(self, 'Delete Model', f'Unable to delete model folder:\n{exc}')
+                return
+            if hasattr(self, '_preview_cache') and self._preview_cache:
+                folder_abs = os.path.abspath(folder)
+                stale_keys = [
+                    key for key in self._preview_cache
+                    if isinstance(key, tuple) and key and isinstance(key[0], str) and key[0].startswith(folder_abs)
+                ]
+                for key in stale_keys:
+                    self._preview_cache.pop(key, None)
+            self.reload_files()
+            return
+
+        updated = getattr(dialog, 'updated_metadata', None)
+        if not updated:
+            return
+
+        if not folder:
+            QMessageBox.critical(self, 'Save Changes', 'Model folder is unknown; cannot write metadata.')
+            return
+
+        meta_path = os.path.join(folder, 'model.json')
+        try:
+            with open(meta_path, 'w', encoding='utf-8') as fh:
+                json.dump(updated, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Save Changes', f'Unable to write model metadata:\n{exc}')
+            return
+
+        self.reload_files()
 
     def populate_gallery(self):
         self._show_loading('Loading models…')
