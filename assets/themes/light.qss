@@ -1,34 +1,78 @@
-/* Light theme QSS for zPrint */
+
+/* Light theme QSS for zPrint - implemented palette
+   Backgrounds: White (#FFFFFF), Light Gray (#F5F7FA), Medium Gray (#E0E6ED)
+   Primary Blue: #007AFF, Dark Blue: #00457C
+   Success: #34C759, Error: #FF3B30
+*/
+
 QWidget {
-  background-color: #fafafa;
+  /* page-level background (subtle) */
+  background-color: #F5F7FA;
   color: #222222;
   font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial;
 }
 
-QLineEdit, QComboBox, QScrollArea, QTextEdit {
-  background-color: #ffffff;
-  color: #222222;
-  border: 1px solid #dcdcdc;
+/* Make the central content slightly 'card-like' on white */
+QWidget#centralwidget, QFrame#content {
+  background-color: #FFFFFF;
 }
 
-QPushButton {
-  background-color: #f0f0f0;
+QLineEdit, QComboBox, QScrollArea, QTextEdit {
+  background-color: #FFFFFF;
   color: #222222;
-  border: 1px solid #d0d0d0;
-  padding: 4px 8px;
+  border: 1px solid #E0E6ED;
   border-radius: 4px;
 }
 
-QPushButton:pressed {
-  background-color: #e0e0e0;
+/* Primary action styling */
+/* Default button style - neutral (not all buttons should be CTA blue)
+   We'll override specific buttons (like btnAddModel) to be the primary CTA. */
+QPushButton {
+  background-color: #F0F4F8;
+  color: #222222;
+  border: 1px solid #E0E6ED;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: normal;
 }
+
+QPushButton:hover {
+  background-color: #E8EEF6;
+}
+
+QPushButton:disabled {
+  background-color: #EDEFF2;
+  color: #9AA6B2;
+}
+
+/* Make the Add Model button the primary blue CTA and bold */
+QPushButton#btnAddModel {
+  background-color: #007AFF;
+  color: #FFFFFF;
+  border: none;
+  font-weight: 700;
+}
+
+/* Make the theme toggle button black */
+QPushButton#btnThemeToggle {
+  background-color: #000000;
+  color: #FFFFFF;
+  border: 1px solid #222222;
+}
+
+/* Success / Error indicators */
+QLabel[status="success"] { color: #34C759; }
+QLabel[status="error"] { color: #FF3B30; }
 
 QToolTip {
-  background-color: #ffffff;
+  background-color: #FFFFFF;
   color: #222222;
-  border: 1px solid #cccccc;
+  border: 1px solid #E0E6ED;
 }
 
+/* Gallery thumbnail style */
 QLabel[thumbnail="true"] {
-  border: 1px solid #cccccc;
+  background-color: #F5F7FA;
+  border: 1px solid #E0E6ED;
 }
+
