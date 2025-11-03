@@ -227,9 +227,11 @@ class StlPreviewDialog(QDialog):
     def _load_mesh(self, mesh_path: str) -> trimesh.Trimesh:
         mesh = trimesh.load_mesh(mesh_path, force="mesh", process=True)
         if isinstance(mesh, (list, tuple)):
-            mesh = trimesh.util.concatenate(mesh)
+            parts = [part for part in mesh if isinstance(part, trimesh.Trimesh)]
+            mesh = trimesh.util.concatenate(parts) if parts else None
         if isinstance(mesh, trimesh.Scene):
-            mesh = mesh.dump(concatenate=True)
+            geoms = [geom for geom in mesh.geometry.values() if isinstance(geom, trimesh.Trimesh)]
+            mesh = trimesh.util.concatenate(geoms) if geoms else None
         if not isinstance(mesh, trimesh.Trimesh):
             raise ValueError("Unsupported mesh format.")
         if mesh.is_empty:

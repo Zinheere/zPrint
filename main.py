@@ -667,10 +667,10 @@ class MainWindow(QMainWindow):
                     thumbnail_pixmap = pix
 
             if thumbnail_pixmap is None:
-                stl_name = model.get('model_file') or model.get('stl_file')
+                model_filename = model.get('model_file') or model.get('stl_file')
                 folder = model.get('folder')
-                if folder and stl_name:
-                    stl_path = os.path.join(folder, stl_name)
+                if folder and model_filename:
+                    stl_path = os.path.join(folder, model_filename)
                     if os.path.exists(stl_path):
                         cache_key = (os.path.abspath(stl_path), theme_key)
                         cached = self._preview_cache.get(cache_key)

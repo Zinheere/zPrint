@@ -112,13 +112,11 @@ def _load_mesh(mesh_path: str | Path) -> trimesh.Trimesh | None:
 	try:
 		loaded = trimesh.load_mesh(mesh_path, force="mesh", process=True)
 		if isinstance(loaded, (list, tuple)):
-			loaded = trimesh.util.concatenate([mesh for mesh in loaded if isinstance(mesh, trimesh.Trimesh)])
+			parts = [mesh for mesh in loaded if isinstance(mesh, trimesh.Trimesh)]
+			loaded = trimesh.util.concatenate(parts) if parts else None
 		if isinstance(loaded, trimesh.Scene):
 			geoms = [geom for geom in loaded.geometry.values() if isinstance(geom, trimesh.Trimesh)]
-			if geoms:
-				loaded = trimesh.util.concatenate(geoms)
-			else:
-				loaded = None
+			loaded = trimesh.util.concatenate(geoms) if geoms else None
 		if isinstance(loaded, trimesh.Trimesh):
 			return loaded
 	except Exception:
