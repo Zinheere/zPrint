@@ -276,7 +276,7 @@ class MainWindow(QMainWindow):
         print("Add new model")
 
     def populate_gallery(self):
-        # Example: Add 4 placeholder cards
+        # Example: Add 4 placeholder cards using a Designer-editable template `ui/model_card.ui`
         # find the scroll area contents widget and its layout that holds the gallery
         container = self.findChild(QWidget, 'scrollAreaWidgetContents')
         if container is None and self.ui is not None:
@@ -287,60 +287,55 @@ class MainWindow(QMainWindow):
             # nothing to attach to
             return
 
+        # Load the model card template UI and instantiate copies using QUiLoader
+        loader = QUiLoader()
         for row in range(2):
             for col in range(2):
-                card = QWidget()
-                layout = QVBoxLayout(card)
-                layout.setContentsMargins(5, 5, 5, 5)
+                ui_file = QFile('ui/model_card.ui')
+                ui_file.open(QFile.ReadOnly)
+                card = loader.load(ui_file, self)
+                ui_file.close()
+                if card is None:
+                    continue
 
-                thumbnail = QLabel("Thumbnail")
-                # Allow the thumbnail to expand with the card and keep a minimum size
-                thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                thumbnail.setMinimumSize(80, 80)
-                thumbnail.setAlignment(Qt.AlignCenter)
-                # If you later set a pixmap, scaledContents=True will make it scale to the label
-                thumbnail.setScaledContents(True)
-                thumbnail.setStyleSheet("background-color: lightgray; border: 1px solid black;")
-                layout.addWidget(thumbnail)
+                # Populate fields
+                thumb = card.findChild(QLabel, 'thumbnailLabel')
+                if thumb is not None:
+                    thumb.setText('Thumbnail')
+                    thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                    thumb.setMinimumSize(80, 80)
+                    thumb.setAlignment(Qt.AlignCenter)
+                    thumb.setScaledContents(True)
 
-                name_label = QLabel(f"Model {row*2 + col +1}")
-                # mark as a card header and track for dynamic font resizing (bold, not blue)
-                name_label.setProperty('cardHeader', True)
-                # clear any inline color so QSS handles base color; we'll set font dynamically
-                name_label.setStyleSheet("")
-                layout.addWidget(name_label)
-                # store reference for dynamic resizing
-                self.card_headers.append(name_label)
+                name_label = card.findChild(QLabel, 'nameLabel')
+                if name_label is not None:
+                    name_label.setText(f'Model {row*2 + col + 1}')
+                    self.card_headers.append(name_label)
 
-                time_label = QLabel("Print time: 1h30m")
-                # Make print time smaller and muted
-                time_label.setStyleSheet("font-size: 8pt; color: gray;")
-                layout.addWidget(time_label)
+                time_label = card.findChild(QLabel, 'timeLabel')
+                if time_label is not None:
+                    time_label.setText('Print time: 1h30m')
 
-                btn_layout = QHBoxLayout()
-                btn_3d = QPushButton("3D View")
-                btn_edit = QPushButton("Edit")
+                btn_3d = card.findChild(QPushButton, 'btn3d')
+                btn_edit = card.findChild(QPushButton, 'btnEditModel')
                 # set icons for these buttons using cached icons if available
                 try:
                     if hasattr(self, '_icon_3d') and self._icon_3d:
-                        btn_3d.setIcon(self._icon_3d)
+                        if btn_3d is not None:
+                            btn_3d.setIcon(self._icon_3d)
                     else:
                         svg_3d = os.path.join(os.path.dirname(__file__), 'assets', 'icons', '3dview.svg')
-                        if os.path.exists(svg_3d):
+                        if os.path.exists(svg_3d) and btn_3d is not None:
                             btn_3d.setIcon(self._icon_from_svg(svg_3d, '#FFFFFF' if self.dark_theme else '#000000', 16))
                     if hasattr(self, '_icon_edit') and self._icon_edit:
-                        btn_edit.setIcon(self._icon_edit)
+                        if btn_edit is not None:
+                            btn_edit.setIcon(self._icon_edit)
                     else:
                         svg_edit = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'editmodel.svg')
-                        if os.path.exists(svg_edit):
+                        if os.path.exists(svg_edit) and btn_edit is not None:
                             btn_edit.setIcon(self._icon_from_svg(svg_edit, '#FFFFFF' if self.dark_theme else '#000000', 16))
                 except Exception:
                     pass
-                # mark edit button so QSS can target it
-                btn_edit.setObjectName('btnEditModel')
-                btn_layout.addWidget(btn_3d)
-                btn_layout.addWidget(btn_edit)
-                layout.addLayout(btn_layout)
 
                 gallery_layout.addWidget(card, row, col)
 

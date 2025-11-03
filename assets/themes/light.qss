@@ -85,8 +85,26 @@ QToolTip {
 }
 
 /* Gallery thumbnail style */
-QLabel[thumbnail="true"] {
+QLabel#thumbnailLabel {
   background-color: #F5F7FA;
   border: 1px solid #E0E6ED;
+}
+
+/* Card surface for model cards (editable via ui/model_card.ui) */
+QWidget#modelCardTemplate {
+  background-color: #FFFFFF; /* card surface */
+  border: 1px solid #E0E6ED; /* medium gray border */
+  border-radius: 8px;
+  padding: 8px;
+}
+
+QWidget#modelCardTemplate QLabel#nameLabel {
+  color: #222222;
+  font-weight: 600; /* bold header on card */
+}
+
+QWidget#modelCardTemplate QLabel#timeLabel {
+  color: #6b7380;
+  font-size: 10pt;
 }
 
