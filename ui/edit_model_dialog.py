@@ -3,17 +3,20 @@ import os
 from copy import deepcopy
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -32,6 +35,12 @@ class EditModelDialog(QDialog):
         self.metadata = {}
         self.updated_metadata: dict | None = None
         self.delete_requested = False
+        self.original_preview_name: str = ""
+        self.current_preview_name: str = ""
+        self.preview_changed = False
+        self.new_preview_source_path: str | None = None
+        self.new_preview_filename: str = ""
+        self._preview_pixmap: QPixmap | None = None
 
         self._load_metadata()
         self._build_ui()
@@ -63,6 +72,20 @@ class EditModelDialog(QDialog):
         form.addRow("Folder", folder_label)
 
         layout.addLayout(form)
+
+        preview_box = QVBoxLayout()
+        self.preview_label = QLabel(self)
+        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setMinimumSize(220, 160)
+        self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.preview_label.setStyleSheet("border: 1px solid rgba(160, 160, 160, 60);")
+        self.preview_label.setWordWrap(True)
+        preview_box.addWidget(self.preview_label)
+
+        self.choose_preview_button = QPushButton("Change Preview…", self)
+        preview_box.addWidget(self.choose_preview_button, alignment=Qt.AlignLeft)
+
+        layout.addLayout(preview_box)
 
         self.gcode_table = QTableWidget(self)
         self.gcode_table.setColumnCount(4)
@@ -97,6 +120,7 @@ class EditModelDialog(QDialog):
         self.button_box.accepted.connect(self._on_accept)
         self.button_box.rejected.connect(self.reject)
         self.delete_button.clicked.connect(self._on_delete_clicked)
+        self.choose_preview_button.clicked.connect(self._on_choose_preview)
 
     def _populate_fields(self) -> None:
         name = self.metadata.get("name") or self.model_data.get("name") or ""
@@ -104,6 +128,21 @@ class EditModelDialog(QDialog):
 
         display_time = self.metadata.get("print_time") or self.model_data.get("print_time") or ""
         self.print_time_edit.setText(str(display_time))
+
+        preview_name = self.metadata.get("preview_image") or ""
+        self.original_preview_name = preview_name
+        self.current_preview_name = preview_name
+        self.preview_changed = False
+        self.new_preview_source_path = None
+        self.new_preview_filename = preview_name
+
+        pixmap = self._load_preview_pixmap()
+        if pixmap:
+            self._update_preview_label(pixmap)
+        else:
+            self._update_preview_label(None)
+            if preview_name:
+                self.preview_label.setText("Preview image not found")
 
         gcodes = self.metadata.get("gcodes") or []
         self.gcode_table.setRowCount(len(gcodes))
@@ -147,6 +186,64 @@ class EditModelDialog(QDialog):
             )
         return rows
 
+    def _load_preview_pixmap(self) -> QPixmap | None:
+        if not self.current_preview_name or not self.folder_path:
+            return None
+        candidate = os.path.join(self.folder_path, self.current_preview_name)
+        if not os.path.exists(candidate):
+            return None
+        pixmap = QPixmap(candidate)
+        if pixmap.isNull():
+            return None
+        return pixmap
+
+    def _update_preview_label(self, pixmap: QPixmap | None) -> None:
+        if not hasattr(self, "preview_label") or self.preview_label is None:
+            return
+        if not pixmap or pixmap.isNull():
+            self._preview_pixmap = None
+            self.preview_label.clear()
+            self.preview_label.setText("No Preview")
+            return
+        self._preview_pixmap = pixmap
+        self._apply_preview_scaling()
+
+    def _apply_preview_scaling(self) -> None:
+        if not self._preview_pixmap or self._preview_pixmap.isNull():
+            return
+        if not hasattr(self, "preview_label") or self.preview_label is None:
+            return
+        target = self.preview_label.size()
+        if target.width() <= 0 or target.height() <= 0:
+            target = QSize(220, 160)
+        scaled = self._preview_pixmap.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.preview_label.setPixmap(scaled)
+        self.preview_label.setText("")
+
+    def _on_choose_preview(self) -> None:
+        start_dir = self.folder_path if self.folder_path else os.path.expanduser("~")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Preview Image",
+            start_dir,
+            "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)",
+        )
+        if not file_path:
+            return
+        pixmap = QPixmap(file_path)
+        if pixmap.isNull():
+            QMessageBox.warning(self, "Invalid Image", "Could not load the selected image file.")
+            return
+        self.preview_changed = True
+        self.new_preview_source_path = file_path
+        self.new_preview_filename = os.path.basename(file_path)
+        self.current_preview_name = self.new_preview_filename
+        self._update_preview_label(pixmap)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_preview_scaling()
+
     def _on_accept(self) -> None:
         name = self.name_edit.text().strip()
         if not name:
@@ -157,6 +254,12 @@ class EditModelDialog(QDialog):
         metadata["name"] = name
         metadata["print_time"] = self.print_time_edit.text().strip()
         metadata["gcodes"] = self._collect_gcode_rows()
+        if self.preview_changed and self.new_preview_source_path:
+            preview_name = self.new_preview_filename or os.path.basename(self.new_preview_source_path)
+            metadata["preview_image"] = preview_name
+        else:
+            metadata["preview_image"] = self.current_preview_name or ""
+        self.current_preview_name = metadata.get("preview_image", "")
         metadata["last_modified"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
         self.updated_metadata = metadata

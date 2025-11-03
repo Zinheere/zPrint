@@ -1227,6 +1227,36 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Save Changes', 'Model folder is unknown; cannot write metadata.')
             return
 
+        preview_changed = getattr(dialog, 'preview_changed', False)
+        new_preview_source = getattr(dialog, 'new_preview_source_path', None)
+        new_preview_name = getattr(dialog, 'new_preview_filename', '') or ''
+        original_preview_name = getattr(dialog, 'original_preview_name', '') or ''
+
+        if preview_changed:
+            if new_preview_source and new_preview_name:
+                dest_path = os.path.join(folder, new_preview_name)
+                try:
+                    if os.path.abspath(new_preview_source) != os.path.abspath(dest_path):
+                        shutil.copy2(new_preview_source, dest_path)
+                except Exception as exc:
+                    QMessageBox.critical(self, 'Save Changes', f'Unable to copy preview image:\n{exc}')
+                    return
+                if original_preview_name and original_preview_name != new_preview_name:
+                    old_path = os.path.join(folder, original_preview_name)
+                    if os.path.isfile(old_path):
+                        try:
+                            os.remove(old_path)
+                        except Exception:
+                            pass
+            else:
+                if original_preview_name:
+                    old_path = os.path.join(folder, original_preview_name)
+                    if os.path.isfile(old_path):
+                        try:
+                            os.remove(old_path)
+                        except Exception:
+                            pass
+
         meta_path = os.path.join(folder, 'model.json')
         try:
             with open(meta_path, 'w', encoding='utf-8') as fh:
