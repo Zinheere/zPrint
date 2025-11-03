@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
         loaded = loader.load(ui_file)
         ui_file.close()
 
-        # The .ui file's top-level widget is a QMainWindow. We are already a QMainWindow
+    # The .ui file's top-level widget is a QMainWindow. We are already a QMainWindow
         # subclass, so extract the central widget from the loaded UI and set it here.
         if isinstance(loaded, QMainWindow):
             central = loaded.findChild(QWidget, 'centralwidget')
@@ -40,6 +40,16 @@ class MainWindow(QMainWindow):
             # loaded a widget (not a QMainWindow) - use it directly
             self.ui = loaded
             self.setCentralWidget(self.ui)
+
+        # Debug: list some important widgets we expect
+        try:
+            found = []
+            for name in ('topBar1', 'btnAddModel', 'btnThemeToggle', 'scrollAreaWidgetContents'):
+                w = self.findChild(QWidget, name) or (self.ui and self.ui.findChild(QWidget, name))
+                found.append((name, bool(w)))
+            print('UI load: widget presence:', found)
+        except Exception:
+            pass
 
         # Access top bar buttons by object name (use findChild because loader returned
         # a separate object rather than attaching attributes to this instance)
@@ -200,10 +210,15 @@ class MainWindow(QMainWindow):
         if os.path.exists(qss_path):
             try:
                 with open(qss_path, 'r', encoding='utf-8') as fh:
-                    QApplication.instance().setStyleSheet(fh.read())
+                    data = fh.read()
+                    QApplication.instance().setStyleSheet(data)
+                    print(f'Applied QSS: {qss_path} (len={len(data)})')
                 # continue to update themed icons after applying stylesheet
-            except Exception:
+            except Exception as e:
+                print('Failed to read QSS:', e)
                 pass
+        else:
+            print('QSS file not found:', qss_path)
 
         # Inline fallback
         if dark:
@@ -263,6 +278,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 self._icon_3d = None
                 self._icon_edit = None
+            print('apply_theme: icons cached', bool(self._icon_3d), bool(self._icon_edit))
         except Exception:
             pass
 
