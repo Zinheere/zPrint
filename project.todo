@@ -1,8 +1,16 @@
 # Project TODO
 
-## Backlog
+0.50 main features:
+- [ ] autocreate models using unsorted gcode and model files
 - [ ] add support for alternate stl/3mf files
-- [ ] fix desktop and start menu blank icon (installer)
+
+0.40 main features:
+more file management improvments
+- [ ] can select models to be "active" which places a copy of the gcode in the root directory of the storage location
+- [ ] remove microsd/local mode, microsd use can just be selecting a different drive, add a "drive not found" alert if microsd is not inserted
+
+## Backlog
+- [ ] import and implement more icons (0.40)
 - [x] add button in the edit dialogue to set preview image as regenerate model preview image
 - [x] PROBLEM: top bars text size reverses to small font after theme toggle
 

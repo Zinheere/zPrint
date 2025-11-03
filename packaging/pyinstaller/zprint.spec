@@ -3,7 +3,7 @@
 import os
 
 from PyInstaller.building.build_main import COLLECT
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_dynamic_libs
 
 block_cipher = None
 
@@ -23,18 +23,28 @@ def _collect_hidden_imports() -> list:
         pass
     return sorted(hidden)
 
+binaries = []
 datas = []
 for folder in ('assets', 'ui'):
     src = os.path.join(PROJECT_ROOT, folder)
     if os.path.isdir(src):
         datas.append((src, folder))
+
+try:
+    binaries.extend(collect_dynamic_libs('vispy'))
+except Exception:
+    pass
+try:
+    datas.extend(collect_data_files('vispy'))
+except Exception:
+    pass
 hiddenimports = _collect_hidden_imports()
 
 
 a = Analysis(
     [os.path.join(PROJECT_ROOT, 'main.py')],
     pathex=[PROJECT_ROOT],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

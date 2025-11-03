@@ -758,6 +758,10 @@ class MainWindow(QMainWindow):
             self._update_all_tinted_icons()
         except Exception:
             pass
+        try:
+            self._resize_top_buttons(initial=True)
+        except Exception:
+            pass
 
     def _apply_thumbnail_pixmap(self, label: QLabel) -> None:
         pixmap = self._thumbnail_sources.get(label)
