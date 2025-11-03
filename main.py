@@ -45,11 +45,11 @@ class MainWindow(QMainWindow):
         # We'll collect the top-bar buttons so we can resize them together later.
         self.top_bar_buttons = []
 
-    # We'll move the top-row buttons into a new container so the bar can be styled
-    central = self.centralWidget()
-    vlayout = central.layout() if central is not None else None
+        # We'll move the top-row buttons into a new container so the bar can be styled
+        central = self.centralWidget()
+        vlayout = central.layout() if central is not None else None
 
-    btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
+        btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
         if btn:
             icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
             svg_path = os.path.join(icons_dir, 'toggletheme.svg')
@@ -63,9 +63,6 @@ class MainWindow(QMainWindow):
             # keep reference so we can swap the icon color when theme changes
             self.theme_button = btn
             # placeholders for tinted icons (computed lazily)
-            self._theme_icon_white = None
-            self._theme_icon_black = None
-            self.theme_button = btn
             self._theme_icon_white = None
             self._theme_icon_black = None
             self.top_bar_buttons.append(btn)
@@ -313,7 +310,6 @@ class MainWindow(QMainWindow):
                 layout.addWidget(name_label)
                 # store reference for dynamic resizing
                 self.card_headers.append(name_label)
-
                 time_label = QLabel("Print time: 1h30m")
                 time_label.setProperty('cardSub', True)
                 time_label.setStyleSheet("")
@@ -326,9 +322,21 @@ class MainWindow(QMainWindow):
                 btn_layout = QHBoxLayout()
                 btn_3d = QPushButton("3D View")
                 btn_edit = QPushButton("Edit")
+                # set icons for the buttons (use SVGs)
+                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+                view_svg = os.path.join(icons_dir, '3dview.svg')
+                edit_svg = os.path.join(icons_dir, 'editmodel.svg')
+                if os.path.exists(view_svg):
+                    btn_3d.setIcon(QIcon(view_svg))
+                    btn_3d.setIconSize(QSize(16, 16))
+                if os.path.exists(edit_svg):
+                    btn_edit.setIcon(QIcon(edit_svg))
+                    btn_edit.setIconSize(QSize(16, 16))
                 btn_layout.addWidget(btn_3d)
                 btn_layout.addWidget(btn_edit)
                 layout.addLayout(btn_layout)
+                # mark the card widget for QSS
+                card.setProperty('card', True)
 
                 gallery_layout.addWidget(card, row, col)
 
@@ -341,6 +349,12 @@ if __name__ == "__main__":
         pass
     window = MainWindow()
     window.show()
+    # set application/window icon and title
+    logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'logo.svg')
+    if os.path.exists(logo_path):
+        app.setWindowIcon(QIcon(logo_path))
+        window.setWindowIcon(QIcon(logo_path))
+    window.setWindowTitle('zPrint')
     # Run an initial sizing pass after show to pick up platform metrics
     from PySide6.QtCore import QTimer
     QTimer.singleShot(0, window._resize_top_buttons)
