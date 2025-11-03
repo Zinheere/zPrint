@@ -60,6 +60,20 @@ QPushButton#btnThemeToggle {
   border: 1px solid #222222;
 }
 
+/* Top bar background */
+QWidget#topBar1 {
+  background-color: #00457C; /* dark blue top bar */
+  color: #FFFFFF;
+}
+
+/* Edit model button in cards should be primary blue as requested */
+QPushButton#btnEditModel {
+  background-color: #007AFF;
+  color: #FFFFFF;
+  border: none;
+  font-weight: 700;
+}
+
 /* Success / Error indicators */
 QLabel[status="success"] { color: #34C759; }
 QLabel[status="error"] { color: #FF3B30; }

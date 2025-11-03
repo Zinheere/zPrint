@@ -69,10 +69,6 @@ class MainWindow(QMainWindow):
             btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             # keep reference so we can swap the icon color when theme changes
             self.theme_button = btn
-            # placeholders for tinted icons (computed lazily)
-            self._theme_icon_white = None
-            self._theme_icon_black = None
-            self._theme_icon_path = icon_path if os.path.exists(icon_path) else None
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnReload') or (self.ui and self.ui.findChild(QPushButton, 'btnReload'))
@@ -224,11 +220,17 @@ class MainWindow(QMainWindow):
         # Update the theme toggle icon to be the opposite color of the button background
         try:
             if hasattr(self, 'theme_button') and self._theme_icon_path:
-                # lazily compute tinted icons
-                if self._theme_icon_white is None:
-                    self._theme_icon_white = self._tint_icon(self._theme_icon_path, '#FFFFFF')
-                if self._theme_icon_black is None:
-                    self._theme_icon_black = self._tint_icon(self._theme_icon_path, '#000000')
+                # lazily compute tinted icons using SVG renderer when possible
+                if self._theme_icon_white is None or self._theme_icon_black is None:
+                    try:
+                        self._theme_icon_white = self._icon_from_svg(self._theme_icon_path, '#FFFFFF', 20)
+                        self._theme_icon_black = self._icon_from_svg(self._theme_icon_path, '#000000', 20)
+                    except Exception:
+                        # fallback to raster tint
+                        if self._theme_icon_white is None:
+                            self._theme_icon_white = self._tint_icon(self._theme_icon_path, '#FFFFFF')
+                        if self._theme_icon_black is None:
+                            self._theme_icon_black = self._tint_icon(self._theme_icon_path, '#000000')
 
                 if dark:
                     # dark mode: button background is white (per dark.qss) -> icon should be black
@@ -244,6 +246,23 @@ class MainWindow(QMainWindow):
                     self.theme_button.setIconSize(QSize(max(8, btn_h - 8), max(8, btn_h - 8)))
                 except Exception:
                     pass
+
+            # Also update shared icons used in gallery buttons (cache them)
+            icon_color = '#FFFFFF' if dark else '#000000'
+            svg_3d = os.path.join(os.path.dirname(__file__), 'assets', 'icons', '3dview.svg')
+            svg_edit = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'editmodel.svg')
+            try:
+                if os.path.exists(svg_3d):
+                    self._icon_3d = self._icon_from_svg(svg_3d, icon_color, 16)
+                else:
+                    self._icon_3d = None
+                if os.path.exists(svg_edit):
+                    self._icon_edit = self._icon_from_svg(svg_edit, icon_color, 16)
+                else:
+                    self._icon_edit = None
+            except Exception:
+                self._icon_3d = None
+                self._icon_edit = None
         except Exception:
             pass
 
@@ -301,17 +320,24 @@ class MainWindow(QMainWindow):
                 btn_layout = QHBoxLayout()
                 btn_3d = QPushButton("3D View")
                 btn_edit = QPushButton("Edit")
-                # set icons for these buttons from SVGs, tint to current foreground color
+                # set icons for these buttons using cached icons if available
                 try:
-                    icon_color = '#FFFFFF' if self.dark_theme else '#000000'
-                    svg_3d = os.path.join(os.path.dirname(__file__), 'assets', 'icons', '3dview.svg')
-                    svg_edit = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'editmodel.svg')
-                    if os.path.exists(svg_3d):
-                        btn_3d.setIcon(self._icon_from_svg(svg_3d, icon_color, 16))
-                    if os.path.exists(svg_edit):
-                        btn_edit.setIcon(self._icon_from_svg(svg_edit, icon_color, 16))
+                    if hasattr(self, '_icon_3d') and self._icon_3d:
+                        btn_3d.setIcon(self._icon_3d)
+                    else:
+                        svg_3d = os.path.join(os.path.dirname(__file__), 'assets', 'icons', '3dview.svg')
+                        if os.path.exists(svg_3d):
+                            btn_3d.setIcon(self._icon_from_svg(svg_3d, '#FFFFFF' if self.dark_theme else '#000000', 16))
+                    if hasattr(self, '_icon_edit') and self._icon_edit:
+                        btn_edit.setIcon(self._icon_edit)
+                    else:
+                        svg_edit = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'editmodel.svg')
+                        if os.path.exists(svg_edit):
+                            btn_edit.setIcon(self._icon_from_svg(svg_edit, '#FFFFFF' if self.dark_theme else '#000000', 16))
                 except Exception:
                     pass
+                # mark edit button so QSS can target it
+                btn_edit.setObjectName('btnEditModel')
                 btn_layout.addWidget(btn_3d)
                 btn_layout.addWidget(btn_edit)
                 layout.addLayout(btn_layout)
@@ -325,7 +351,15 @@ if __name__ == "__main__":
         app.setFont(QFont('Inter', 13))
     except Exception:
         pass
+    # set application icon (logo.svg)
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'logo.svg')
+        if os.path.exists(logo_path):
+            app.setWindowIcon(QIcon(logo_path))
+    except Exception:
+        pass
     window = MainWindow()
+    window.setWindowTitle("zPrint")
     window.show()
     # Run an initial sizing pass after show to pick up platform metrics
     from PySide6.QtCore import QTimer
