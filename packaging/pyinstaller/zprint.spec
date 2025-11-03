@@ -3,28 +3,11 @@
 import os
 
 from PyInstaller.building.build_main import COLLECT
-from PyInstaller.building.datastructures import Tree
 from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
-HERE = os.path.abspath(os.path.dirname(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
-
-
-def _tree(src: str, dest: str):
-    if not os.path.isdir(src):
-        return []
-    return [Tree(src, prefix=dest)]
-
-
-def _collect_data() -> list:
-    datas = []
-    datas.extend(_tree(os.path.join(PROJECT_ROOT, 'assets'), 'assets'))
-    datas.extend(_tree(os.path.join(PROJECT_ROOT, 'ui'), 'ui'))
-    return datas
-
-
+PROJECT_ROOT = os.path.abspath(os.getcwd())
 def _collect_hidden_imports() -> list:
     hidden = set(['PySide6.QtSvg', 'PySide6.QtSvgWidgets'])
     try:
@@ -33,8 +16,11 @@ def _collect_hidden_imports() -> list:
         pass
     return sorted(hidden)
 
-
-datas = _collect_data()
+datas = []
+for folder in ('assets', 'ui'):
+    src = os.path.join(PROJECT_ROOT, folder)
+    if os.path.isdir(src):
+        datas.append((src, folder))
 hiddenimports = _collect_hidden_imports()
 
 

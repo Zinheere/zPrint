@@ -28,6 +28,8 @@ from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
 from ui.new_model_dialog import NewModelDialog
 
+APP_VERSION = "0.20 Beta"
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1238,6 +1240,8 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setApplicationName('zPrint')
+    app.setApplicationVersion(APP_VERSION)
     # set global fonts (will fallback to system fonts if Inter / JetBrains Mono are not installed)
     try:
         app.setFont(QFont('Inter', 13))
@@ -1253,7 +1257,7 @@ if __name__ == "__main__":
             app.setWindowIcon(QIcon(logo_path))
             window.setWindowIcon(QIcon(logo_path))
             break
-    window.setWindowTitle('zPrint')
+    window.setWindowTitle(f'zPrint {APP_VERSION}')
     # Run an initial sizing pass after show to pick up platform metrics
     from PySide6.QtCore import QTimer
     QTimer.singleShot(0, window._resize_top_buttons)

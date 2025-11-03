@@ -1,4 +1,10 @@
 # Project TODO
+
+## Backlog
+- [ ] Add 3D preview display for selected model
+- [ ] Build metadata edit dialog and persistence
+
+## Completed
 - [x] Load models from configuration and hydrate gallery cards
 - [x] Enable search, sorting, and material filtering controls
 - [x] Implement import workflow for new models (dialog + packaging)
@@ -6,10 +12,20 @@
 - [x] Add loading overlay sourced from UI file for async refreshes
 - [x] Apply theme toggle with tinted icons and persisted preference
 - [x] Modernize scrollbars in light and dark themes
-- [ ] Add 3D preview display for selected model
-- [ ] Build metadata edit dialog and persistence
 - [x] Implement "Add Model" button to show popup
-- [ ] Make "Import" button select a models folder
+- [x] Make "Import" button select or create a models folder and persist configuration
+- [x] Package Windows release (PyInstaller bundle + Inno Setup installer)
+
+## Release Notes
+### 0.20 Beta (2025-11-03)
+- Config saved under `%APPDATA%\zPrint` with document-root fallback.
+- Import flow supports creating new model folders and updates gallery empty state.
+- Added Windows build pipeline: PyInstaller spec, release script, and Inno Setup installer.
+
+### 0.10 Beta (initial drop)
+- Initial gallery experience with search, sort, and material filters.
+- Theme toggle, loading overlay, and STL thumbnail rendering pipeline.
+- Added New Model dialog scaffold and JSON-backed gallery hydration.
 
 
 
@@ -17,5 +33,9 @@
 
 
 
-ALPHA TODO (LONG TERM):
-.exe setup, pick microsd vs local/ make folder
+
+
+
+
+
+

@@ -4,6 +4,20 @@
 
 **Current:** creating basic structure, mostly setup stuff...
 
+## Release Notes
+
+### 0.20 Beta (2025-11-03)
+
+- Added configurable import flow with folder creation and config persistence in `%APPDATA%\zPrint`.
+- Simplified empty gallery state and ensured document-root defaults target the user Documents directory.
+- Introduced PyInstaller/ Inno Setup packaging scripts for portable builds and Windows installers.
+
+### 0.10 Beta (initial drop)
+
+- Established gallery UI with search, sort, and material filtering controls.
+- Wired theme toggle, loading overlays, and adaptive STL thumbnail rendering.
+- Added New Model dialog skeleton and core JSON-loading pipeline.
+
 ## Building
 
 ### Windows executable and installer

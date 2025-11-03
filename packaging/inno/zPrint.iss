@@ -1,6 +1,6 @@
 ; zPrint Windows installer definition for Inno Setup 6
 #define MyAppName "zPrint"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.20.0-beta"
 #define MyAppPublisher "zinheere"
 #define MyAppExeName "zPrint.exe"
 
