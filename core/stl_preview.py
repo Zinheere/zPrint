@@ -12,7 +12,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap, QPainter, QColor
 
 __all__ = ["render_stl_preview"]
 
@@ -50,7 +50,13 @@ def render_stl_preview(
 
 	triangles = mesh.triangles
 	if isinstance(triangles, np.ndarray) and triangles.size:
-		collection = Poly3DCollection(triangles, linewidths=0.25, facecolor=face_color, edgecolor=edge_color)
+		collection = Poly3DCollection(
+			triangles,
+			linewidths=0.1,
+			facecolor=face_color,
+			edgecolor=edge_color,
+			antialiased=True,
+		)
 		axis.add_collection3d(collection)
 
 	_configure_view(axis, mesh)
@@ -67,7 +73,27 @@ def render_stl_preview(
 	if pixmap.isNull():
 		return None
 	if pixmap.size() != target_size:
-		pixmap = pixmap.scaled(target_size, mode=Qt.SmoothTransformation)  # type: ignore[name-defined]
+		scaled = pixmap.scaled(
+			target_size,
+			aspectMode=Qt.KeepAspectRatio,
+			mode=Qt.SmoothTransformation,
+		)
+		framed = QPixmap(target_size)
+		framed.fill(QColor(background))
+		painter = QPainter(framed)
+		offset_x = (target_size.width() - scaled.width()) // 2
+		offset_y = (target_size.height() - scaled.height()) // 2
+		painter.drawPixmap(offset_x, offset_y, scaled)
+		painter.end()
+		pixmap = framed
+	else:
+		# ensure background is opaque even if renderer left margins transparent
+		with_background = QPixmap(target_size)
+		with_background.fill(QColor(background))
+		painter = QPainter(with_background)
+		painter.drawPixmap(0, 0, pixmap)
+		painter.end()
+		pixmap = with_background
 	return pixmap
 
 
@@ -100,8 +126,8 @@ def _palette(dark: bool) -> tuple[str, tuple[float, float, float, float], tuple[
 
 
 def _configure_view(axis, mesh: trimesh.Trimesh) -> None:
-	axis.view_init(elev=24, azim=35)
-	axis.dist = 8  # type: ignore[attr-defined]
+	axis.view_init(elev=26, azim=35)
+	axis.dist = 7  # type: ignore[attr-defined]
 
 	bounds = mesh.bounds
 	if bounds.size == 0:
@@ -110,7 +136,7 @@ def _configure_view(axis, mesh: trimesh.Trimesh) -> None:
 	extents = upper - lower
 	max_extent = float(np.max(extents)) or 1.0
 	center = mesh.centroid
-	padding = max_extent * 0.6
+	padding = max_extent * 0.35
 
 	for center_value, axis_setter in zip(center, (axis.set_xlim, axis.set_ylim, axis.set_zlim)):
 		axis_setter(center_value - padding, center_value + padding)
