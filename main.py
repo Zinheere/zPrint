@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, Q
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QSize
 from PySide6.QtGui import QIcon, QFont, QPixmap, QPainter, QColor
+from PySide6.QtSvg import QSvgRenderer
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -47,9 +48,20 @@ class MainWindow(QMainWindow):
 
         btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
         if btn:
-            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'toggletheme.png')
-            if os.path.exists(icon_path):
-                btn.setIcon(QIcon(icon_path))
+            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'toggletheme.svg')
+            # prepare SVG icons (white/black) for swapping later
+            self._theme_icon_path = icon_path if os.path.exists(icon_path) else None
+            self._theme_icon_white = None
+            self._theme_icon_black = None
+            if self._theme_icon_path:
+                # create small default icons; real sizing will be applied later
+                try:
+                    self._theme_icon_white = self._icon_from_svg(self._theme_icon_path, '#FFFFFF', 20)
+                    self._theme_icon_black = self._icon_from_svg(self._theme_icon_path, '#000000', 20)
+                    # set a default icon now (will be updated by apply_theme)
+                    btn.setIcon(self._theme_icon_black if not self.dark_theme else self._theme_icon_white)
+                except Exception:
+                    pass
             btn.setText('')
             btn.setToolTip('Toggle theme')
             btn.clicked.connect(self.toggle_theme)
@@ -159,6 +171,22 @@ class MainWindow(QMainWindow):
             return QIcon(out)
         except Exception:
             return QIcon()
+
+    def _icon_from_svg(self, path: str, hex_color: str, size: int) -> QIcon:
+        """Render an SVG at the requested square size and tint it to hex_color, returning a QIcon."""
+        try:
+            renderer = QSvgRenderer(path)
+            pix = QPixmap(size, size)
+            pix.fill(QColor(0, 0, 0, 0))
+            painter = QPainter(pix)
+            renderer.render(painter)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(pix.rect(), QColor(hex_color))
+            painter.end()
+            return QIcon(pix)
+        except Exception:
+            # fallback: try tinting a rasterized version
+            return self._tint_icon(path, hex_color)
 
     # Placeholder methods
     def toggle_theme(self):
@@ -273,6 +301,17 @@ class MainWindow(QMainWindow):
                 btn_layout = QHBoxLayout()
                 btn_3d = QPushButton("3D View")
                 btn_edit = QPushButton("Edit")
+                # set icons for these buttons from SVGs, tint to current foreground color
+                try:
+                    icon_color = '#FFFFFF' if self.dark_theme else '#000000'
+                    svg_3d = os.path.join(os.path.dirname(__file__), 'assets', 'icons', '3dview.svg')
+                    svg_edit = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'editmodel.svg')
+                    if os.path.exists(svg_3d):
+                        btn_3d.setIcon(self._icon_from_svg(svg_3d, icon_color, 16))
+                    if os.path.exists(svg_edit):
+                        btn_edit.setIcon(self._icon_from_svg(svg_edit, icon_color, 16))
+                except Exception:
+                    pass
                 btn_layout.addWidget(btn_3d)
                 btn_layout.addWidget(btn_edit)
                 layout.addLayout(btn_layout)
