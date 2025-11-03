@@ -8,6 +8,7 @@
 
 ### 0.20 Beta (2025-11-03)
 
+- Replaced the STL preview dialog with a VisPy-powered renderer for smooth, GPU-accelerated orbit and zoom.
 - Added configurable import flow with folder creation and config persistence in `%APPDATA%\zPrint`.
 - Simplified empty gallery state and ensured document-root defaults target the user Documents directory.
 - Introduced PyInstaller/ Inno Setup packaging scripts for portable builds and Windows installers.

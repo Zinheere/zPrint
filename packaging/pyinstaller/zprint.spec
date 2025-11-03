@@ -17,6 +17,10 @@ def _collect_hidden_imports() -> list:
         hidden.update(collect_submodules('core'))
     except Exception:
         pass
+    try:
+        hidden.update(collect_submodules('vispy'))
+    except Exception:
+        pass
     return sorted(hidden)
 
 datas = []

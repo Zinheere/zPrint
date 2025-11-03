@@ -7,8 +7,7 @@ from typing import Optional
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import QPoint, QSize, Qt, QTimer
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -18,156 +17,127 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.stl_preview import render_stl_preview
+try:
+    from vispy import app, scene, color as vcolor
+    from vispy.visuals.transforms import STTransform
+
+    app.use_app("pyside6")
+    VISPY_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    VISPY_AVAILABLE = False
+
+
+DEFAULT_ELEVATION = 26.0
+DEFAULT_AZIMUTH = 35.0
 
 
 class _InteractivePreview(QWidget):
-    """Widget that re-renders a mesh preview while tracking orbit and zoom."""
+    """GPU-backed mesh viewer powered by VisPy."""
 
     def __init__(
         self,
         mesh: trimesh.Trimesh,
-        stl_path: str,
         *,
         dark_theme: bool,
         parent: Optional[QWidget] = None,
     ) -> None:
+        if not VISPY_AVAILABLE:
+            raise RuntimeError("VisPy backend is unavailable.")
         super().__init__(parent)
-        self.setMouseTracking(True)
         self.setMinimumSize(560, 420)
 
         self._mesh = mesh
-        self._stl_path = stl_path
         self._dark_theme = dark_theme
-        self._angles = [26.0, 35.0]
-        self._distance_scale = 1.0
-        self._dragging = False
-        self._last_pos = QPoint()
-        self._current_pixmap = None
-        self._quick_mode = False
 
-        self._render_timer = QTimer(self)
-        self._render_timer.setSingleShot(True)
-        self._render_timer.timeout.connect(self._render_now)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        self._settle_timer = QTimer(self)
-        self._settle_timer.setSingleShot(True)
-        self._settle_timer.timeout.connect(self._exit_quick_mode)
+        background = "#0f1115" if dark_theme else "#f4f5f8"
+        face_hex = "#8db4ff" if dark_theme else "#3a6db3"
+        accent_hex = "#c5d7ff" if dark_theme else "#ffffff"
 
-        self._schedule_render()
-
-    def _schedule_render(self) -> None:
-        self._render_timer.start(0)
-
-    def _render_now(self) -> None:
-        size = self.size()
-        width = max(200, size.width())
-        height = max(200, size.height())
-        max_dimension = max(width, height)
-        scale_cap = 1.0
-        if max_dimension > 720:
-            scale_cap = 720.0 / float(max_dimension)
-        if self._quick_mode:
-            quality_scale = max(0.3, scale_cap * 0.5)
-        else:
-            quality_scale = max(0.45, scale_cap * 0.85)
-        self._current_pixmap = render_stl_preview(
-            self._stl_path,
-            QSize(width, height),
-            dark_theme=self._dark_theme,
-            mesh=self._mesh,
-            view_angles=(self._angles[0], self._angles[1]),
-            distance_scale=self._distance_scale,
-            quality_scale=quality_scale,
+        self._canvas = scene.SceneCanvas(
+            keys=None,
+            size=(640, 480),
+            bgcolor=background,
+            show=False,
         )
-        self.update()
+        self._canvas.create_native()
+        self._canvas.native.setParent(self)
+        layout.addWidget(self._canvas.native)
 
-    def _enter_quick_mode(self) -> None:
-        if not self._quick_mode:
-            self._quick_mode = True
-        self._settle_timer.start(90)
-
-    def _exit_quick_mode(self) -> None:
-        if not self._quick_mode:
-            return
-        self._settle_timer.stop()
-        self._quick_mode = False
-        self._schedule_render()
-
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), self.palette().window())
-        if self._current_pixmap is None or self._current_pixmap.isNull():
-            painter.drawText(self.rect(), Qt.AlignCenter, "Rendering preview…")
-            return
-        target = self.rect()
-        pix = self._current_pixmap.scaled(
-            target.size(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
+        self._view = self._canvas.central_widget.add_view()
+        self._view.camera = scene.cameras.TurntableCamera(
+            fov=45.0,
+            azimuth=DEFAULT_AZIMUTH,
+            elevation=DEFAULT_ELEVATION,
+            distance=2.0,
+            up="+z",
         )
-        x = target.x() + (target.width() - pix.width()) // 2
-        y = target.y() + (target.height() - pix.height()) // 2
-        painter.drawPixmap(x, y, pix)
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
-        super().resizeEvent(event)
-        self._schedule_render()
+        self._camera = self._view.camera
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.LeftButton:
-            self._dragging = True
-            self._last_pos = event.position().toPoint()
-            event.accept()
-            return
-        super().mousePressEvent(event)
+        vertices = np.asarray(mesh.vertices, dtype=np.float32)
+        faces = np.asarray(mesh.faces, dtype=np.uint32)
+        if vertices.size == 0 or faces.size == 0:
+            raise ValueError("Mesh contains no triangles.")
 
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
-        if self._dragging:
-            pos = event.position().toPoint()
-            delta = pos - self._last_pos
-            self._last_pos = pos
-            self._angles[0] = float(np.clip(self._angles[0] - delta.y() * 0.5, -89.0, 89.0))
-            self._angles[1] = (self._angles[1] + delta.x() * 0.5) % 360.0
-            self._enter_quick_mode()
-            self._schedule_render()
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
+        lower, upper = mesh.bounds
+        center = (lower + upper) / 2.0
+        extent = upper - lower
+        max_extent = float(np.max(extent))
+        radius = max(0.5, max_extent * 0.6)
+        self._radius = radius
 
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.LeftButton:
-            self._dragging = False
-            self._exit_quick_mode()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
+        mesh_color = vcolor.Color(face_hex).rgba
+        self._mesh_visual = scene.visuals.Mesh(
+            vertices=vertices,
+            faces=faces,
+            color=mesh_color,
+            shading="smooth",
+        )
+        self._mesh_visual.transform = STTransform(translate=-center)
+        self._mesh_visual.parent = self._view.scene
 
-    def leaveEvent(self, event) -> None:  # type: ignore[override]
-        super().leaveEvent(event)
-        self._dragging = False
-        self._exit_quick_mode()
+        scene.visuals.AmbientLight(
+            parent=self._view.scene,
+            color=vcolor.Color(accent_hex).rgba,
+        )
+        scene.visuals.DirectionalLight(
+            parent=self._view.scene,
+            color=vcolor.Color("#ffffff").rgba,
+            direction=(0.7, 1.0, 1.3),
+        )
+        scene.visuals.DirectionalLight(
+            parent=self._view.scene,
+            color=vcolor.Color("#7690d0").rgba,
+            direction=(-0.6, -0.8, -0.4),
+        )
 
-    def wheelEvent(self, event) -> None:  # type: ignore[override]
-        delta = event.angleDelta().y()
-        if delta == 0:
-            super().wheelEvent(event)
-            return
-        factor = 0.9 if delta > 0 else 1.1
-        self._distance_scale = float(np.clip(self._distance_scale * factor, 0.4, 3.0))
-        self._enter_quick_mode()
-        self._schedule_render()
-        event.accept()
+        self._default_distance = self._radius * 2.8
+        self._camera.distance = self._default_distance
+        self._camera.center = (0.0, 0.0, 0.0)
+        near_clip = max(0.01, self._radius / 100.0)
+        far_clip = self._radius * 12.0
+        self._camera.clip_planes = (near_clip, far_clip)
+        span = self._radius * 1.2
+        self._camera.set_range(x=(-span, span), y=(-span, span), z=(-span, span))
 
     def reset_view(self) -> None:
-        self._angles = [26.0, 35.0]
-        self._distance_scale = 1.0
-        self._quick_mode = False
-        self._schedule_render()
+        self._camera.azimuth = DEFAULT_AZIMUTH
+        self._camera.elevation = DEFAULT_ELEVATION
+        self._camera.distance = self._default_distance
+        self._camera.center = (0.0, 0.0, 0.0)
+
+    def close(self) -> None:  # pragma: no cover - cleanup helper
+        try:
+            self._canvas.close()
+        finally:
+            super().close()
 
 
 class StlPreviewDialog(QDialog):
-    """Interactive window that orbits an STL model using repeated renders."""
+    """Interactive window for orbiting around an STL model."""
 
     def __init__(
         self,
@@ -188,6 +158,11 @@ class StlPreviewDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
+        if not VISPY_AVAILABLE:
+            layout.addWidget(self._build_error_label("VisPy is not installed; 3D preview is unavailable."))
+            layout.addLayout(self._build_close_row())
+            return
+
         stl_path = self._resolve_stl_path()
         if not stl_path:
             layout.addWidget(self._build_error_label("This model does not reference an STL file."))
@@ -201,7 +176,13 @@ class StlPreviewDialog(QDialog):
             layout.addLayout(self._build_close_row())
             return
 
-        self._preview_widget = _InteractivePreview(mesh, stl_path, dark_theme=self._dark_theme, parent=self)
+        try:
+            self._preview_widget = _InteractivePreview(mesh, dark_theme=self._dark_theme, parent=self)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            layout.addWidget(self._build_error_label(f"Failed to initialise viewer:\n{exc}"))
+            layout.addLayout(self._build_close_row())
+            return
+
         layout.addWidget(self._preview_widget)
         layout.addWidget(self._build_info_label(stl_path))
         layout.addLayout(self._build_controls_row())

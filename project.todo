@@ -24,6 +24,7 @@ make the app show a loading bar instead of not responding when loading large fil
 
 ## Release Notes
 ### 0.20 Beta (2025-11-03)
+- Upgraded STL viewer dialog to VisPy for responsive, GPU-accelerated interaction.
 - Config saved under `%APPDATA%\zPrint` with document-root fallback.
 - Import flow supports creating new model folders and updates gallery empty state.
 - Added Windows build pipeline: PyInstaller spec, release script, and Inno Setup installer.
