@@ -5,8 +5,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$specPath = Join-Path $root 'build\zprint.spec'
-$installerScript = Join-Path $root 'build\installer\zPrint.iss'
+$specPath = Join-Path $root 'packaging\pyinstaller\zprint.spec'
+$installerScript = Join-Path $root 'packaging\inno\zPrint.iss'
 
 if (-not (Test-Path $specPath)) {
     throw "PyInstaller spec file not found at $specPath"
