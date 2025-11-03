@@ -1,4 +1,4 @@
-"""Interactive STL viewer dialog used by the gallery."""
+"""Interactive STL/3MF viewer dialog used by the gallery."""
 
 from __future__ import annotations
 
@@ -89,30 +89,57 @@ class _InteractivePreview(QWidget):
         radius = max(0.5, max_extent * 0.6)
         self._radius = radius
 
-        mesh_color = vcolor.Color(face_hex).rgba
+        base_rgb = np.asarray(vcolor.Color(face_hex).rgb, dtype=np.float32)
+        light_dir = np.array([0.35, 0.6, 0.7], dtype=np.float32)
+        norm = np.linalg.norm(light_dir)
+        if norm == 0:
+            light_dir = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        else:
+            light_dir /= norm
+
+        vertex_normals = np.asarray(mesh.vertex_normals, dtype=np.float32)
+        if vertex_normals.shape != vertices.shape:
+            vertex_normals = np.zeros_like(vertices, dtype=np.float32)
+            face_normals = np.asarray(mesh.face_normals, dtype=np.float32)
+            for face, normal in zip(faces, face_normals):
+                vertex_normals[face] += normal
+            lengths = np.linalg.norm(vertex_normals, axis=1, keepdims=True)
+            lengths[lengths == 0.0] = 1.0
+            vertex_normals /= lengths
+
+        intensities = np.clip(vertex_normals @ light_dir, -1.0, 1.0)
+        intensities = 0.2 + 0.8 * np.clip(intensities, 0.0, 1.0)
+        vertex_colors = np.clip(intensities[:, None] * base_rgb, 0.0, 1.0)
+        alpha = np.ones((vertex_colors.shape[0], 1), dtype=np.float32)
+        vertex_colors = np.hstack([vertex_colors, alpha])
+
+        supports_directional = hasattr(scene.visuals, "DirectionalLight")
+        shading_mode = "smooth" if supports_directional else None
         self._mesh_visual = scene.visuals.Mesh(
             vertices=vertices,
             faces=faces,
-            color=mesh_color,
-            shading="smooth",
+            vertex_colors=vertex_colors,
+            shading=shading_mode,
         )
         self._mesh_visual.transform = STTransform(translate=-center)
         self._mesh_visual.parent = self._view.scene
 
-        scene.visuals.AmbientLight(
-            parent=self._view.scene,
-            color=vcolor.Color(accent_hex).rgba,
-        )
-        scene.visuals.DirectionalLight(
-            parent=self._view.scene,
-            color=vcolor.Color("#ffffff").rgba,
-            direction=(0.7, 1.0, 1.3),
-        )
-        scene.visuals.DirectionalLight(
-            parent=self._view.scene,
-            color=vcolor.Color("#7690d0").rgba,
-            direction=(-0.6, -0.8, -0.4),
-        )
+        if hasattr(scene.visuals, "AmbientLight"):
+            scene.visuals.AmbientLight(
+                parent=self._view.scene,
+                color=vcolor.Color(accent_hex).rgba,
+            )
+        if supports_directional:
+            scene.visuals.DirectionalLight(
+                parent=self._view.scene,
+                color=vcolor.Color("#ffffff").rgba,
+                direction=(0.7, 1.0, 1.3),
+            )
+            scene.visuals.DirectionalLight(
+                parent=self._view.scene,
+                color=vcolor.Color("#7690d0").rgba,
+                direction=(-0.6, -0.8, -0.4),
+            )
 
         self._default_distance = self._radius * 2.8
         self._camera.distance = self._default_distance
@@ -137,7 +164,7 @@ class _InteractivePreview(QWidget):
 
 
 class StlPreviewDialog(QDialog):
-    """Interactive window for orbiting around an STL model."""
+    """Interactive window for orbiting around an STL or 3MF model."""
 
     def __init__(
         self,
@@ -163,14 +190,14 @@ class StlPreviewDialog(QDialog):
             layout.addLayout(self._build_close_row())
             return
 
-        stl_path = self._resolve_stl_path()
-        if not stl_path:
-            layout.addWidget(self._build_error_label("This model does not reference an STL file."))
+        model_path = self._resolve_model_path()
+        if not model_path:
+            layout.addWidget(self._build_error_label("This model does not reference a 3D model file."))
             layout.addLayout(self._build_close_row())
             return
 
         try:
-            mesh = self._load_mesh(stl_path)
+            mesh = self._load_mesh(model_path)
         except Exception as exc:
             layout.addWidget(self._build_error_label(f"Unable to load mesh:\n{exc}"))
             layout.addLayout(self._build_close_row())
@@ -184,21 +211,27 @@ class StlPreviewDialog(QDialog):
             return
 
         layout.addWidget(self._preview_widget)
-        layout.addWidget(self._build_info_label(stl_path))
+        layout.addWidget(self._build_info_label(model_path))
         layout.addLayout(self._build_controls_row())
 
-    def _resolve_stl_path(self) -> Optional[str]:
+    def _resolve_model_path(self) -> Optional[str]:
         folder = self._model_data.get("folder")
-        stl_name = self._model_data.get("stl_file")
-        if not folder or not stl_name:
+        filename = self._model_data.get("model_file") or self._model_data.get("stl_file")
+        if not folder or not filename:
             return None
-        candidate = os.path.join(folder, stl_name)
+        candidate = os.path.join(folder, filename)
         if os.path.isfile(candidate):
             return candidate
         return None
 
-    def _load_mesh(self, stl_path: str) -> trimesh.Trimesh:
-        mesh = trimesh.load_mesh(stl_path, force="mesh", process=True)
+    def _load_mesh(self, mesh_path: str) -> trimesh.Trimesh:
+        mesh = trimesh.load_mesh(mesh_path, force="mesh", process=True)
+        if isinstance(mesh, (list, tuple)):
+            mesh = trimesh.util.concatenate(mesh)
+        if isinstance(mesh, trimesh.Scene):
+            mesh = mesh.dump(concatenate=True)
+        if not isinstance(mesh, trimesh.Trimesh):
+            raise ValueError("Unsupported mesh format.")
         if mesh.is_empty:
             raise ValueError("Mesh contains no geometry.")
         return mesh

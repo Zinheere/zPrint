@@ -499,7 +499,8 @@ class MainWindow(QMainWindow):
             last_modified_dt = self._parse_iso_datetime(meta.get('last_modified'))
             time_created_dt = self._parse_iso_datetime(meta.get('time_created'))
             print_minutes = self._parse_print_time_to_minutes(display_time)
-            search_terms = [model_name, entry, meta.get('stl_file'), display_time]
+            model_file = meta.get('model_file') or meta.get('stl_file')
+            search_terms = [model_name, entry, model_file, display_time]
             for g in gcodes:
                 search_terms.append(g.get('file'))
                 search_terms.append(g.get('material'))
@@ -517,7 +518,8 @@ class MainWindow(QMainWindow):
                 'time_created_dt': time_created_dt,
                 'print_time_minutes': print_minutes,
                 'search_blob': search_blob,
-                'stl_file': meta.get('stl_file')
+                'stl_file': meta.get('stl_file') or model_file,
+                'model_file': model_file,
             })
         return models
 
@@ -665,7 +667,7 @@ class MainWindow(QMainWindow):
                     thumbnail_pixmap = pix
 
             if thumbnail_pixmap is None:
-                stl_name = model.get('stl_file')
+                stl_name = model.get('model_file') or model.get('stl_file')
                 folder = model.get('folder')
                 if folder and stl_name:
                     stl_path = os.path.join(folder, stl_name)

@@ -331,9 +331,9 @@ class NewModelDialog(QDialog):
         os.makedirs(model_dir, exist_ok=False)
         created_paths = []
         try:
-            stl_dest = os.path.join(model_dir, os.path.basename(data["model_path"]))
-            shutil.copy2(data["model_path"], stl_dest)
-            created_paths.append(stl_dest)
+            model_dest = os.path.join(model_dir, os.path.basename(data["model_path"]))
+            shutil.copy2(data["model_path"], model_dest)
+            created_paths.append(model_dest)
 
             gcodes_meta = []
             for entry in data["gcodes"]:
@@ -368,9 +368,11 @@ class NewModelDialog(QDialog):
                     created_paths.append(preview_dest)
 
             timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            model_filename = os.path.basename(model_dest)
             meta = {
                 "name": data["name"],
-                "stl_file": os.path.basename(stl_dest),
+                "stl_file": model_filename,
+                "model_file": model_filename,
                 "gcodes": gcodes_meta,
                 "preview_image": preview_name,
                 "last_modified": timestamp,

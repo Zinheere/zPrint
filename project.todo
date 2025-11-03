@@ -1,8 +1,8 @@
 # Project TODO
 
 ## Backlog
+- [ ] add loading bars for everything so the window will not be "not responding"
 - [ ] Build metadata edit dialog and persistence
-- [ ] Make 3d model preview & interactive model viewer work with 3mf files
 - [ ] update program to reflect v0.030
 - [ ] v0.30 release notes
 - [ ] remove windows smartscreen warning
@@ -10,6 +10,7 @@ v0.30 misc updates (for github copilot):
 make the app show a loading bar instead of not responding when loading large file, also save mode (microsd/local) in config json so it is used as the default in save location dropdown in the add model menu and also save the theme every time it is switched. make sure "system volume information doesnt show as a model lmao
 
 ## Completed
+- [x] Make 3D model preview & interactive viewer work with 3MF files
 - [x] Add 3D preview display using popup window for selected model (3d view button)
 - [x] Load models from configuration and hydrate gallery cards
 - [x] Enable search, sorting, and material filtering controls
@@ -24,6 +25,7 @@ make the app show a loading bar instead of not responding when loading large fil
 
 ## Release Notes
 ### 0.20 Beta (2025-11-03)
+- Added 3MF support across gallery thumbnails and interactive viewer.
 - Upgraded STL viewer dialog to VisPy for responsive, GPU-accelerated interaction.
 - Config saved under `%APPDATA%\zPrint` with document-root fallback.
 - Import flow supports creating new model folders and updates gallery empty state.

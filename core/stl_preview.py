@@ -18,7 +18,7 @@ __all__ = ["render_stl_preview"]
 
 
 def render_stl_preview(
-	stl_path: str | Path | None,
+	mesh_path: str | Path | None,
 	size: QSize | tuple[int, int] = QSize(320, 240),
 	*,
 	dark_theme: bool = False,
@@ -27,19 +27,19 @@ def render_stl_preview(
 	distance_scale: float = 1.0,
 	quality_scale: float = 1.0,
 ) -> QPixmap | None:
-	"""Render an STL file into a tinted `QPixmap` for gallery previews.
+	"""Render an STL or 3MF file into a tinted `QPixmap` for gallery previews.
 
 	The mesh is loaded with `trimesh`, plotted with Matplotlib's 3D toolkit,
 	and rasterised off-screen so PySide can display it without an OpenGL
-	wigdet. Returns `None` if the STL cannot be parsed or rendered. The
+	widget. Returns `None` if the model cannot be parsed or rendered. The
 	`quality_scale` argument allows callers to trade detail for speed during
 	interactive updates (valid range 0.3-1.0).
 	"""
 
 	if mesh is None:
-		if not stl_path:
+		if not mesh_path:
 			return None
-		mesh = _load_mesh(stl_path)
+		mesh = _load_mesh(mesh_path)
 	if mesh is None or mesh.is_empty:
 		return None
 
@@ -108,11 +108,22 @@ def render_stl_preview(
 	return pixmap
 
 
-def _load_mesh(stl_path: str | Path) -> trimesh.Trimesh | None:
+def _load_mesh(mesh_path: str | Path) -> trimesh.Trimesh | None:
 	try:
-		return trimesh.load_mesh(stl_path, force="mesh", process=True)
+		loaded = trimesh.load_mesh(mesh_path, force="mesh", process=True)
+		if isinstance(loaded, (list, tuple)):
+			loaded = trimesh.util.concatenate([mesh for mesh in loaded if isinstance(mesh, trimesh.Trimesh)])
+		if isinstance(loaded, trimesh.Scene):
+			geoms = [geom for geom in loaded.geometry.values() if isinstance(geom, trimesh.Trimesh)]
+			if geoms:
+				loaded = trimesh.util.concatenate(geoms)
+			else:
+				loaded = None
+		if isinstance(loaded, trimesh.Trimesh):
+			return loaded
 	except Exception:
 		return None
+	return None
 
 
 def _coerce_qsize(value: QSize | tuple[int, int]) -> QSize:
