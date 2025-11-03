@@ -1,17 +1,16 @@
 import sys
 import os
 import json
+import re
+from datetime import datetime
 from functools import partial
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QSizePolicy
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, Qt, QSize, QByteArray
-from PySide6.QtGui import QIcon, QFont, QPixmap, QPainter, QColor
-# NEW: try QtSvg for reliable SVG rendering
-try:
-    from PySide6.QtSvg import QSvgRenderer  # type: ignore
-except Exception:
-    QSvgRenderer = None
-import xml.etree.ElementTree as ET
+from PySide6.QtCore import QFile, Qt, QSize
+from PySide6.QtGui import QIcon, QFont, QPixmap
+
+from core.svg_rendering import tint_icon
+from core.stl_preview import render_stl_preview
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -25,6 +24,9 @@ class MainWindow(QMainWindow):
         self._icons_dir = os.path.join(self.app_dir, 'assets', 'icons')
         # track widgets/actions that need tinted icons reapplied on theme/resize
         self._icon_targets = []  # entries: {'kind': 'button'|'action', 'widget': QWidget, 'action': QAction|None, 'path': str}
+        self.search_box = None
+        self.sort_dropdown = None
+        self.filter_dropdown = None
         self.load_ui()
         # apply the chosen theme immediately on startup
         self.apply_theme(self.dark_theme)
@@ -32,6 +34,12 @@ class MainWindow(QMainWindow):
         self.card_headers = []
         self.card_subtexts = []
         self.cards = []
+        self._models = []
+        self._visible_models = []
+        self._preview_cache = {}
+        self._search_term = ''
+        self._current_material_filter = 'All Materials'
+        self._current_sort_index = 0
         self.populate_gallery()
 
     def load_ui(self):
@@ -126,16 +134,22 @@ class MainWindow(QMainWindow):
 
         # Prepare references to inputs on the second top bar for resizing
         self.top_bar_inputs = []
-        search = self.findChild(QLabel, 'searchBox') or (self.ui and self.ui.findChild(QLabel, 'searchBox'))
-        if search is None:
-            from PySide6.QtWidgets import QLineEdit
-            search = self.findChild(QLineEdit, 'searchBox') or (self.ui and self.ui.findChild(QLineEdit, 'searchBox'))
+        from PySide6.QtWidgets import QLineEdit as _QLE
+        search = self.findChild(_QLE, 'searchBox') or (self.ui and self.ui.findChild(_QLE, 'searchBox'))
         if search is not None:
-            from PySide6.QtWidgets import QLineEdit as _QLE
             search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             action = search.addAction(QIcon(), _QLE.LeadingPosition)
             self._register_icon(search, ('search.svg', 'magnify.svg', 'magnifier.svg'), action)
+            search.textChanged.connect(self._on_search_changed)
+            self.search_box = search
             self.top_bar_inputs.append(search)
+            # capture initial search text for filtering
+            self._search_term = search.text().strip()
+        else:
+            fallback = self.findChild(QLabel, 'searchBox') or (self.ui and self.ui.findChild(QLabel, 'searchBox'))
+            if fallback is not None:
+                fallback.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                self.top_bar_inputs.append(fallback)
 
         from PySide6.QtWidgets import QComboBox
         for name in ('sortDropdown', 'filterDropdown'):
@@ -145,6 +159,14 @@ class MainWindow(QMainWindow):
                     dd.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
                 except Exception:
                     pass
+                if name == 'sortDropdown':
+                    self.sort_dropdown = dd
+                    self._current_sort_index = dd.currentIndex()
+                    dd.currentIndexChanged.connect(self._on_sort_changed)
+                elif name == 'filterDropdown':
+                    self.filter_dropdown = dd
+                    self._current_material_filter = dd.currentText()
+                    dd.currentIndexChanged.connect(self._on_filter_changed)
                 self.top_bar_inputs.append(dd)
 
         # Align the second top bar layout margins/spacings so height matches the first bar
@@ -297,103 +319,7 @@ class MainWindow(QMainWindow):
     def _tint_icon(self, path: str, hex_color: str, size: QSize | None = None) -> QIcon:
         """Render an SVG (or image) and tint to hex_color. Uses QSvgRenderer if available."""
         try:
-            if size is None:
-                size = QSize(64, 64)
-            w = max(1, size.width())
-            h = max(1, size.height())
-
-            # Prefer QSvgRenderer for SVGs
-            if path.lower().endswith('.svg') and QSvgRenderer is not None:
-                # Attempt to sanitize background rectangles from the SVG before rendering
-                renderer = None
-                try:
-                    with open(path, 'r', encoding='utf-8') as fh:
-                        svg_text = fh.read()
-                    # Parse and remove obvious full-canvas background rects
-                    try:
-                        root = ET.fromstring(svg_text)
-                        # Determine canvas size from viewBox if available
-                        vb = root.attrib.get('viewBox')
-                        vb_w = vb_h = None
-                        if vb:
-                            parts = [p for p in vb.replace(',', ' ').split(' ') if p.strip()]
-                            if len(parts) == 4:
-                                try:
-                                    vb_w = float(parts[2])
-                                    vb_h = float(parts[3])
-                                except Exception:
-                                    vb_w = vb_h = None
-                        # Iterate over rects and remove ones covering full canvas or 100%
-                        removed_any = False
-                        for parent in list(root.iter()):
-                            # Work on a copy of list to allow removal
-                            for rect in list(parent):
-                                if rect.tag.lower().endswith('rect'):
-                                    w_attr = rect.attrib.get('width', '')
-                                    h_attr = rect.attrib.get('height', '')
-                                    x_attr = rect.attrib.get('x', '0')
-                                    y_attr = rect.attrib.get('y', '0')
-                                    style = rect.attrib.get('style', '')
-                                    fill = rect.attrib.get('fill', '')
-                                    def to_float(v):
-                                        try:
-                                            v = v.replace('px', '')
-                                            return float(v)
-                                        except Exception:
-                                            return None
-                                    # Heuristic: 100% x 100% or matches viewBox size at x=0,y=0 and has a fill (not none)
-                                    is_percent_full = (w_attr.strip().endswith('%') and h_attr.strip().endswith('%') and w_attr.strip().startswith('100') and h_attr.strip().startswith('100'))
-                                    w_num = to_float(w_attr)
-                                    h_num = to_float(h_attr)
-                                    x_num = to_float(x_attr) or 0.0
-                                    y_num = to_float(y_attr) or 0.0
-                                    matches_vb = (vb_w is not None and vb_h is not None and w_num == vb_w and h_num == vb_h and abs(x_num) < 1e-6 and abs(y_num) < 1e-6)
-                                    has_fill = ('fill:' in style and 'fill:none' not in style.replace(' ', '').lower()) or (fill and fill.lower() != 'none')
-                                    if has_fill and (is_percent_full or matches_vb):
-                                        try:
-                                            parent.remove(rect)
-                                            removed_any = True
-                                        except Exception:
-                                            pass
-                        if removed_any:
-                            cleaned = ET.tostring(root, encoding='utf-8')
-                            renderer = QSvgRenderer(QByteArray(cleaned))
-                        else:
-                            renderer = QSvgRenderer(path)
-                    except Exception:
-                        # Fallback to loading directly if parsing fails
-                        renderer = QSvgRenderer(path)
-                except Exception:
-                    renderer = QSvgRenderer(path)
-                if renderer.isValid():
-                    pm = QPixmap(w, h)
-                    pm.fill(Qt.transparent)
-                    p = QPainter(pm)
-                    renderer.render(p)
-                    p.end()
-
-                    # Create solid color pixmap and mask it with rendered alpha
-                    tinted = QPixmap(w, h)
-                    tinted.fill(Qt.transparent)
-                    p = QPainter(tinted)
-                    p.fillRect(0, 0, w, h, QColor(hex_color))
-                    p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
-                    p.drawPixmap(0, 0, pm)
-                    p.end()
-                    return QIcon(tinted)
-
-            # Fallback: load via QIcon and paint it, then tint
-            base = QIcon(path)
-            if base.isNull():
-                return QIcon()
-            pm = QPixmap(w, h)
-            pm.fill(Qt.transparent)
-            p = QPainter(pm)
-            base.paint(p, 0, 0, w, h)
-            p.setCompositionMode(QPainter.CompositionMode_SourceIn)
-            p.fillRect(0, 0, w, h, QColor(hex_color))
-            p.end()
-            return QIcon(pm)
+            return tint_icon(path, hex_color, size)
         except Exception:
             return QIcon()
 
@@ -470,23 +396,93 @@ class MainWindow(QMainWindow):
                 if os.path.exists(candidate):
                     preview_path = candidate
             gcodes = meta.get('gcodes') or []
+            materials = []
             display_time = ''
             for g in gcodes:
+                material = g.get('material')
+                if material:
+                    materials.append(str(material))
                 time_text = g.get('print_time')
-                if time_text:
+                if time_text and not display_time:
                     display_time = str(time_text)
-                    break
             if not display_time:
                 display_time = str(meta.get('print_time', '')) if meta.get('print_time') is not None else ''
+            materials = [m for m in materials if m]
+            last_modified_dt = self._parse_iso_datetime(meta.get('last_modified'))
+            time_created_dt = self._parse_iso_datetime(meta.get('time_created'))
+            print_minutes = self._parse_print_time_to_minutes(display_time)
+            search_terms = [model_name, entry, meta.get('stl_file'), display_time]
+            for g in gcodes:
+                search_terms.append(g.get('file'))
+                search_terms.append(g.get('material'))
+            search_blob = ' '.join(str(term) for term in search_terms if term).lower()
             models.append({
                 'name': model_name,
                 'folder': folder_path,
                 'preview_path': preview_path,
                 'gcodes': gcodes,
                 'print_time': display_time,
-                'metadata': meta
+                'metadata': meta,
+                'materials': sorted(set(materials)),
+                'last_modified_dt': last_modified_dt,
+                'time_created_dt': time_created_dt,
+                'print_time_minutes': print_minutes,
+                'search_blob': search_blob,
+                'stl_file': meta.get('stl_file')
             })
         return models
+
+    def _parse_iso_datetime(self, value) -> datetime | None:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            try:
+                if text.endswith('Z'):
+                    return datetime.fromisoformat(text.replace('Z', '+00:00'))
+            except Exception:
+                pass
+            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S'):
+                try:
+                    return datetime.strptime(text, fmt)
+                except Exception:
+                    continue
+        except Exception:
+            return None
+        return None
+
+    def _parse_print_time_to_minutes(self, value) -> int | None:
+        if not value:
+            return None
+        text = str(value).strip().lower()
+        if not text:
+            return None
+        total = 0
+        matches = re.findall(r'(\d+)\s*([hm])', text)
+        for amount, unit in matches:
+            try:
+                qty = int(amount)
+            except Exception:
+                continue
+            if unit == 'h':
+                total += qty * 60
+            elif unit == 'm':
+                total += qty
+        if total:
+            return total
+        digits = re.findall(r'(\d+)', text)
+        if digits:
+            try:
+                return int(digits[0])
+            except Exception:
+                return None
+        return None
 
     def _clear_gallery(self):
         # Remove previous card widgets and associated icon registrations
@@ -498,6 +494,7 @@ class MainWindow(QMainWindow):
         self.cards = []
         self.card_headers = []
         self.card_subtexts = []
+        self._visible_models = []
         if hasattr(self, 'gallery_layout') and self.gallery_layout is not None:
             while self.gallery_layout.count():
                 item = self.gallery_layout.takeAt(0)
@@ -505,13 +502,30 @@ class MainWindow(QMainWindow):
                 if widget is not None:
                     widget.deleteLater()
 
-    def _refresh_gallery(self):
-        data = self._load_models_data()
+    def _refresh_gallery(self, models: list[dict] | None = None):
+        models = list(models) if models is not None else list(self._models)
         self._clear_gallery()
         if not getattr(self, 'gallery_layout', None):
             return
 
-        for model in data:
+        if not models:
+            placeholder = QLabel('No models found')
+            placeholder.setAlignment(Qt.AlignCenter)
+            placeholder.setWordWrap(True)
+            placeholder.setProperty('emptyState', True)
+            self.cards = [placeholder]
+            self.gallery_layout.addWidget(placeholder, 0, 0)
+            self._visible_models = []
+            self.relayout_gallery()
+            try:
+                self._update_all_tinted_icons()
+            except Exception:
+                pass
+            return
+
+        visible = []
+        theme_key = 'dark' if getattr(self, 'dark_theme', False) else 'light'
+        for model in models:
             card = QWidget()
             layout = QVBoxLayout(card)
             layout.setContentsMargins(5, 5, 5, 5)
@@ -522,13 +536,31 @@ class MainWindow(QMainWindow):
             thumbnail.setScaledContents(True)
             thumbnail.setMinimumSize(120, 120)
             thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            thumbnail_pixmap = None
             preview_path = model.get('preview_path')
             if preview_path:
                 pix = QPixmap(preview_path)
-                if not pix.isNull():
-                    thumbnail.setPixmap(pix)
-                else:
-                    thumbnail.setText('No Preview')
+                if pix and not pix.isNull():
+                    thumbnail_pixmap = pix
+
+            if thumbnail_pixmap is None:
+                stl_name = model.get('stl_file')
+                folder = model.get('folder')
+                if folder and stl_name:
+                    stl_path = os.path.join(folder, stl_name)
+                    if os.path.exists(stl_path):
+                        cache_key = (os.path.abspath(stl_path), theme_key)
+                        cached = self._preview_cache.get(cache_key)
+                        if cached is not None and not cached.isNull():
+                            thumbnail_pixmap = cached
+                        else:
+                            generated = render_stl_preview(stl_path, QSize(256, 256), dark_theme=(theme_key == 'dark'))
+                            if generated and not generated.isNull():
+                                thumbnail_pixmap = generated
+                                self._preview_cache[cache_key] = generated
+
+            if thumbnail_pixmap and not thumbnail_pixmap.isNull():
+                thumbnail.setPixmap(thumbnail_pixmap)
             else:
                 thumbnail.setText('No Preview')
             layout.addWidget(thumbnail)
@@ -550,18 +582,128 @@ class MainWindow(QMainWindow):
             btn_3d = QPushButton('3D View')
             self._register_icon(btn_3d, ('3dview.svg', '3dviewbutton.svg'))
             btn_3d.clicked.connect(partial(self.view_model, model))
+            btn_3d.setIconSize(QSize(18, 18))
             btn_edit = QPushButton('Edit')
             self._register_icon(btn_edit, ('editmodel.svg', 'editbutton.svg'))
             btn_edit.clicked.connect(partial(self.edit_model, model))
+            btn_edit.setIconSize(QSize(18, 18))
             btn_layout.addWidget(btn_3d)
             btn_layout.addWidget(btn_edit)
             layout.addLayout(btn_layout)
 
             card.setProperty('card', True)
             self.cards.append(card)
+            visible.append(model)
+
+        self._visible_models = visible
 
         self.relayout_gallery()
-        self._update_all_tinted_icons()
+        try:
+            self._update_all_tinted_icons()
+        except Exception:
+            pass
+
+    def _populate_material_filters(self, models: list[dict]):
+        if not self.filter_dropdown:
+            return
+        materials = sorted({mat for model in models for mat in model.get('materials', []) if mat})
+        options = ['All Materials'] + materials
+        current = self._current_material_filter or 'All Materials'
+        try:
+            self.filter_dropdown.blockSignals(True)
+        except Exception:
+            pass
+        self.filter_dropdown.clear()
+        for option in options:
+            self.filter_dropdown.addItem(option)
+        if current in options:
+            index = options.index(current)
+        else:
+            index = 0
+            current = 'All Materials'
+        self.filter_dropdown.setCurrentIndex(index)
+        try:
+            self.filter_dropdown.blockSignals(False)
+        except Exception:
+            pass
+        self._current_material_filter = current
+
+    def _apply_model_filters(self):
+        if not self._models:
+            self._refresh_gallery([])
+            return
+        filtered = list(self._models)
+        term = (self._search_term or '').strip().lower()
+        if term:
+            filtered = [
+                model for model in filtered
+                if term in (model.get('name', '').lower())
+                or term in (model.get('search_blob', ''))
+            ]
+        material = (self._current_material_filter or '').strip()
+        if material and material.lower() != 'all materials':
+            filtered = [model for model in filtered if material in model.get('materials', [])]
+        sorted_models = self._sort_models(filtered)
+        self._refresh_gallery(sorted_models)
+
+    def _sort_models(self, models: list[dict]) -> list[dict]:
+        index = self._current_sort_index or 0
+        reverse = False
+
+        def _dt_key(value):
+            dt = value if isinstance(value, datetime) else None
+            if dt is None:
+                return float('-inf')
+            try:
+                return float(dt.timestamp())
+            except Exception:
+                try:
+                    return float(datetime.fromisoformat(str(value)).timestamp())
+                except Exception:
+                    return float('-inf')
+
+        if index == 0:
+            key = lambda m: _dt_key(m.get('last_modified_dt'))
+            reverse = True
+        elif index == 1:
+            key = lambda m: _dt_key(m.get('time_created_dt'))
+            reverse = True
+        elif index == 2:
+            key = lambda m: m.get('name', '').lower()
+        elif index == 3:
+            key = lambda m: m.get('name', '').lower()
+            reverse = True
+        elif index == 4:
+            key = lambda m: m.get('print_time_minutes') if m.get('print_time_minutes') is not None else float('inf')
+        else:
+            key = lambda m: m.get('name', '').lower()
+
+        try:
+            return sorted(models, key=key, reverse=reverse)
+        except Exception:
+            return list(models)
+
+    def _on_search_changed(self, text: str):
+        self._search_term = text or ''
+        self._apply_model_filters()
+
+    def _on_sort_changed(self, value):
+        try:
+            index = int(value)
+        except Exception:
+            index = self.sort_dropdown.currentIndex() if self.sort_dropdown else 0
+        self._current_sort_index = index
+        self._apply_model_filters()
+
+    def _on_filter_changed(self, value):
+        if isinstance(value, str):
+            selected = value
+        elif self.filter_dropdown:
+            selected = self.filter_dropdown.currentText()
+        else:
+            selected = 'All Materials'
+        self._current_material_filter = selected or 'All Materials'
+        self._apply_model_filters()
 
     def _icon_color_for_theme(self) -> str:
         """Color for icons based on current theme: black on light, white on dark."""
@@ -654,9 +796,13 @@ class MainWindow(QMainWindow):
                 self.theme_button.setIcon(QIcon())
 
         self._update_all_tinted_icons()
+        if getattr(self, 'gallery_layout', None):
+            self._apply_model_filters()
 
     def reload_files(self):
-        print("Reload files")
+        self._models = self._load_models_data()
+        self._populate_material_filters(self._models)
+        self._apply_model_filters()
 
     def import_files(self):
         print("Import files")
@@ -692,7 +838,9 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        self._refresh_gallery()
+        self._models = self._load_models_data()
+        self._populate_material_filters(self._models)
+        self._apply_model_filters()
 
     def relayout_gallery(self):
         """Compute number of columns based on available width and re-add cards to grid."""

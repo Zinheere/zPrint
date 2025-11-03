@@ -1,0 +1,17 @@
+# Project TODO
+- [x] Load models from configuration and hydrate gallery cards
+- [x] Enable search, sorting, and material filtering controls
+- [ ] Implement import workflow for new models
+- [ ] Add 3D preview display for selected model
+- [ ] Build metadata edit dialog and persistence
+Implement "add model" button to show popup
+Make "import" button select a models folder
+
+
+
+
+
+
+
+ALPHA TODO (LONG TERM):
+.exe setup, pick microsd vs local/ make folder

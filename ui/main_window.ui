@@ -57,7 +57,7 @@
        <widget class="QComboBox" name="sortDropdown">
         <item>
          <property name="text">
-          <string>Last viewed</string>
+          <string>Last modified</string>
          </property>
         </item>
         <item>

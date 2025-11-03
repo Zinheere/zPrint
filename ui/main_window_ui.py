@@ -104,7 +104,7 @@ class Ui_MainWindow(object):
         self.btnImport.setText(QCoreApplication.translate("MainWindow", u"Import", None))
         self.btnAddModel.setText(QCoreApplication.translate("MainWindow", u"Add Model", None))
         self.searchBox.setPlaceholderText(QCoreApplication.translate("MainWindow", u"Search...", None))
-        self.sortDropdown.setItemText(0, QCoreApplication.translate("MainWindow", u"Last viewed", None))
+        self.sortDropdown.setItemText(0, QCoreApplication.translate("MainWindow", u"Last modified", None))
         self.sortDropdown.setItemText(1, QCoreApplication.translate("MainWindow", u"Last created", None))
         self.sortDropdown.setItemText(2, QCoreApplication.translate("MainWindow", u"Name A-Z", None))
         self.sortDropdown.setItemText(3, QCoreApplication.translate("MainWindow", u"Name Z-A", None))
