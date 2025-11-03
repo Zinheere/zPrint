@@ -4,12 +4,19 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, Q
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QSize
 from PySide6.QtGui import QIcon, QFont, QPixmap, QPainter, QColor
+# NEW: try QtSvg for reliable SVG rendering
+try:
+    from PySide6.QtSvg import QSvgRenderer  # type: ignore
+except Exception:
+    QSvgRenderer = None
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         # theme state: False = light, True = dark
         self.dark_theme = False
+        # track widgets/actions that need tinted icons reapplied on theme/resize
+        self._icon_targets = []  # entries: {'kind': 'button'|'action', 'widget': QWidget, 'action': QAction|None, 'path': str}
         self.load_ui()
         # apply the chosen theme immediately on startup
         self.apply_theme(self.dark_theme)
@@ -63,12 +70,8 @@ class MainWindow(QMainWindow):
                 print("[icons] Found theme toggle SVG:", svg_path)
             btn.setToolTip('Toggle theme')
             btn.clicked.connect(self.toggle_theme)
-            # If we have an icon, prefer icon-only and square; otherwise keep text from .ui
-            if self._theme_icon_path:
-                btn.setText('')
-                btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-            else:
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            # Keep text until we successfully set an icon in apply_theme()
+            btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             # keep reference so we can swap the icon color when theme changes
             self.theme_button = btn
             # placeholders for tinted icons (computed lazily)
@@ -86,7 +89,7 @@ class MainWindow(QMainWindow):
                 for cand in ('reload.svg', 'refresh.svg'):
                     p = os.path.join(icons_dir, cand)
                     if os.path.exists(p):
-                        btn.setIcon(QIcon(p))
+                        self._icon_targets.append({'kind': 'button', 'widget': btn, 'action': None, 'path': p})
                         break
             except Exception:
                 pass
@@ -102,7 +105,7 @@ class MainWindow(QMainWindow):
                 for cand in ('import.svg', 'upload.svg', 'open.svg'):
                     p = os.path.join(icons_dir, cand)
                     if os.path.exists(p):
-                        btn.setIcon(QIcon(p))
+                        self._icon_targets.append({'kind': 'button', 'widget': btn, 'action': None, 'path': p})
                         break
             except Exception:
                 pass
@@ -118,7 +121,7 @@ class MainWindow(QMainWindow):
                 for cand in ('addmodel.svg', 'add.svg', 'plus.svg', 'new.svg'):
                     p = os.path.join(icons_dir, cand)
                     if os.path.exists(p):
-                        btn.setIcon(QIcon(p))
+                        self._icon_targets.append({'kind': 'button', 'widget': btn, 'action': None, 'path': p})
                         break
             except Exception:
                 pass
@@ -171,7 +174,8 @@ class MainWindow(QMainWindow):
                     for cand in ('search.svg', 'magnify.svg', 'magnifier.svg'):
                         p = os.path.join(icons_dir, cand)
                         if os.path.exists(p):
-                            search.addAction(QIcon(p), _QLE.LeadingPosition)
+                            act = search.addAction(QIcon(p), _QLE.LeadingPosition)
+                            self._icon_targets.append({'kind': 'action', 'widget': search, 'action': act, 'path': p})
                             break
                 except Exception:
                     pass
@@ -330,30 +334,99 @@ class MainWindow(QMainWindow):
             self.relayout_gallery()
         except Exception:
             pass
-
-    def _tint_icon(self, path: str, hex_color: str) -> QIcon:
-        """Return a QIcon with the source pixmap tinted to hex_color. Uses SourceIn composition to preserve alpha."""
+        # Update tinted icons to reflect any size changes from resize
         try:
-            pix = QPixmap(path)
-            if pix.isNull():
-                # try rendering via QIcon for SVGs
-                base = QIcon(path)
-                if base.isNull():
-                    return QIcon()
-                # render to a reasonable base size; final iconSize will be set on button
-                pix = base.pixmap(QSize(64, 64))
-            out = QPixmap(pix.size())
-            out.fill(QColor(0, 0, 0, 0))
-            painter = QPainter(out)
-            painter.drawPixmap(0, 0, pix)
-            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-            painter.fillRect(out.rect(), QColor(hex_color))
-            painter.end()
-            return QIcon(out)
+            self._update_all_tinted_icons()
         except Exception:
+            pass
+
+    def _tint_icon(self, path: str, hex_color: str, size: QSize | None = None) -> QIcon:
+        """Render an SVG (or image) and tint to hex_color. Uses QSvgRenderer if available."""
+        try:
+            if size is None:
+                size = QSize(64, 64)
+            w = max(1, size.width())
+            h = max(1, size.height())
+
+            # Prefer QSvgRenderer for SVGs
+            if path.lower().endswith('.svg') and QSvgRenderer is not None:
+                renderer = QSvgRenderer(path)
+                if renderer.isValid():
+                    pm = QPixmap(w, h)
+                    pm.fill(Qt.transparent)
+                    p = QPainter(pm)
+                    renderer.render(p)
+                    p.end()
+
+                    # Create solid color pixmap and mask it with rendered alpha
+                    tinted = QPixmap(w, h)
+                    tinted.fill(QColor(hex_color))
+                    p = QPainter(tinted)
+                    p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+                    p.drawPixmap(0, 0, pm)
+                    p.end()
+                    return QIcon(tinted)
+                else:
+                    print("[icons] QSvgRenderer could not load:", path)
+
+            # Fallback: load via QIcon and paint it, then tint
+            base = QIcon(path)
+            if base.isNull():
+                return QIcon()
+            pm = QPixmap(w, h)
+            pm.fill(Qt.transparent)
+            p = QPainter(pm)
+            base.paint(p, 0, 0, w, h)
+            p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            p.fillRect(0, 0, w, h, QColor(hex_color))
+            p.end()
+            return QIcon(pm)
+        except Exception as e:
+            print("[icons] Tinting failed:", e)
             return QIcon()
 
-    # Placeholder methods
+    def _icon_color_for_theme(self) -> str:
+        """Color for icons based on current theme: black on light, white on dark."""
+        return '#000000' if not getattr(self, 'dark_theme', False) else '#FFFFFF'
+
+    def _compute_icon_dim(self, widget) -> int:
+        """Compute icon dimension from widget height with sensible clamps."""
+        try:
+            h = widget.height() or widget.sizeHint().height() or 28
+        except Exception:
+            h = 28
+        return min(22, max(12, h - 14))
+
+    def _update_all_tinted_icons(self):
+        """Reapply tinted icons for all registered targets (toolbar/search/card)."""
+        color = self._icon_color_for_theme()
+        for entry in list(self._icon_targets):
+            kind = entry.get('kind')
+            path = entry.get('path')
+            if not path or not os.path.exists(path):
+                continue
+            if kind == 'button':
+                btn = entry.get('widget')
+                if not btn:
+                    continue
+                dim = self._compute_icon_dim(btn)
+                icon = self._tint_icon(path, color, QSize(dim, dim))
+                if icon and not icon.isNull():
+                    btn.setIcon(icon)
+                    try:
+                        btn.setIconSize(QSize(dim, dim))
+                    except Exception:
+                        pass
+            elif kind == 'action':
+                act = entry.get('action')
+                w = entry.get('widget')
+                if not act or not w:
+                    continue
+                dim = self._compute_icon_dim(w)
+                icon = self._tint_icon(path, color, QSize(dim, dim))
+                if icon and not icon.isNull():
+                    act.setIcon(icon)
+
     def toggle_theme(self):
         # Toggle theme state and apply the corresponding QSS
         self.dark_theme = not getattr(self, 'dark_theme', False)
@@ -369,56 +442,52 @@ class MainWindow(QMainWindow):
         qss_loaded = False
         if os.path.exists(qss_path):
             try:
-                # Try to load the QSS file. Mark as loaded so we don't later
-                # override it with the inline fallback.
                 with open(qss_path, 'r', encoding='utf-8') as fh:
                     QApplication.instance().setStyleSheet(fh.read())
                     qss_loaded = True
-            except Exception:
+            except Exception as e:
+                print("[theme] Failed to load QSS:", e)
                 qss_loaded = False
 
-        # Only apply the inline fallback if we failed to load a QSS file
         if not qss_loaded:
             if dark:
-                dark = '''
+                dark_qss = '''
                 QWidget { background-color: #2b2b2b; color: #e6e6e6; }
                 QLineEdit, QComboBox, QScrollArea { background-color: #3c3c3c; }
                 QPushButton { background-color: #444444; color: #e6e6e6; border: none; padding: 4px; }
                 QPushButton:pressed { background-color: #555555; }
                 '''
-                QApplication.instance().setStyleSheet(dark)
+                QApplication.instance().setStyleSheet(dark_qss)
             else:
                 QApplication.instance().setStyleSheet('')
 
-        # Update the theme toggle icon to be the opposite color of the button background
+        # Update the theme toggle icon to be opposite color; if it fails, keep text
         try:
             if hasattr(self, 'theme_button') and getattr(self, '_theme_icon_path', None):
-                # lazily compute tinted icons
-                if getattr(self, '_theme_icon_white', None) is None:
-                    self._theme_icon_white = self._tint_icon(self._theme_icon_path, '#FFFFFF')
-                if getattr(self, '_theme_icon_black', None) is None:
-                    self._theme_icon_black = self._tint_icon(self._theme_icon_path, '#000000')
-
-                chosen_icon = None
-                if dark:
-                    if self._theme_icon_white and not self._theme_icon_white.isNull():
-                        chosen_icon = self._theme_icon_white
+                btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
+                dim = min(24, max(16, btn_h - 10))
+                # Icons should be BLACK on LIGHT theme and WHITE on DARK theme
+                color = '#000000' if not dark else '#FFFFFF'
+                icon = self._tint_icon(self._theme_icon_path, color, QSize(dim, dim))
+                if icon and not icon.isNull():
+                    self.theme_button.setIcon(icon)
+                    self.theme_button.setIconSize(QSize(dim, dim))
+                    # hide text only if icon is valid
+                    if self.theme_button.text():
+                        self.theme_button.setText('')
+                    print("[icons] Set theme toggle icon (dark=", dark, ", color=", color, ")")
                 else:
-                    if self._theme_icon_black and not self._theme_icon_black.isNull():
-                        chosen_icon = self._theme_icon_black
-
-                if chosen_icon and not chosen_icon.isNull():
-                    self.theme_button.setIcon(chosen_icon)
-                    print("[icons] Set theme toggle icon (dark=", dark, ")")
-                    # keep icon size consistent with button
-                    try:
-                        btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
-                        dim = min(24, max(12, btn_h - 12))
-                        self.theme_button.setIconSize(QSize(dim, dim))
-                    except Exception:
-                        pass
-                else:
+                    # fallback: show text so the button isn't blank
+                    if not self.theme_button.text():
+                        self.theme_button.setText('Theme')
+                    self.theme_button.setIcon(QIcon())
                     print("[icons] Failed to set theme toggle icon (icon is null)")
+        except Exception as e:
+            print("[icons] Theme toggle icon update error:", e)
+
+        # After theme application, update all other tinted icons
+        try:
+            self._update_all_tinted_icons()
         except Exception:
             pass
 
@@ -500,13 +569,13 @@ class MainWindow(QMainWindow):
                     view_svg = next((os.path.join(icons_dir, n) for n in view_candidates if os.path.exists(os.path.join(icons_dir, n))), None)
                     edit_svg = next((os.path.join(icons_dir, n) for n in edit_candidates if os.path.exists(os.path.join(icons_dir, n))), None)
                     if view_svg:
-                        btn_3d.setIcon(QIcon(view_svg))
+                        self._icon_targets.append({'kind': 'button', 'widget': btn_3d, 'action': None, 'path': view_svg})
                         btn_3d.setIconSize(QSize(18, 18))
-                        print("[icons] 3D View icon set:", view_svg)
+                        print("[icons] 3D View icon registered:", view_svg)
                     if edit_svg:
-                        btn_edit.setIcon(QIcon(edit_svg))
+                        self._icon_targets.append({'kind': 'button', 'widget': btn_edit, 'action': None, 'path': edit_svg})
                         btn_edit.setIconSize(QSize(18, 18))
-                        print("[icons] Edit icon set:", edit_svg)
+                        print("[icons] Edit icon registered:", edit_svg)
                 except Exception:
                     pass
                 btn_layout.addWidget(btn_3d)
@@ -519,6 +588,11 @@ class MainWindow(QMainWindow):
 
         # Initial layout
         self.relayout_gallery()
+        # apply current theme tinting for any newly registered icons
+        try:
+            self._update_all_tinted_icons()
+        except Exception:
+            pass
 
     def relayout_gallery(self):
         """Compute number of columns based on available width and re-add cards to grid."""
