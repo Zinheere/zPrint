@@ -32,7 +32,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         # theme state: False = light, True = dark
-        self.app_dir = os.path.dirname(__file__)
+        self.app_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        self._config_dir = self._determine_config_dir()
+        self._config_path = os.path.join(self._config_dir, 'config.json')
         self.config = self._load_config()
         mode_theme = self.config.get('theme', 'light').lower()
         self.dark_theme = mode_theme == 'dark'
@@ -63,7 +65,8 @@ class MainWindow(QMainWindow):
         self.populate_gallery()
 
     def load_ui(self):
-        ui_file = QFile("ui/main_window.ui")
+        ui_path = os.path.join(self.app_dir, 'ui', 'main_window.ui')
+        ui_file = QFile(ui_path)
         ui_file.open(QFile.ReadOnly)
         loader = QUiLoader()
         loaded = loader.load(ui_file)
@@ -349,12 +352,25 @@ class MainWindow(QMainWindow):
         except Exception:
             return QIcon()
 
+    def _determine_config_dir(self) -> str:
+        if getattr(sys, 'frozen', False):
+            base = os.getenv('APPDATA') or os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming')
+            path = os.path.join(base, 'zPrint')
+        else:
+            path = self.app_dir
+        try:
+            os.makedirs(path, exist_ok=True)
+        except Exception:
+            pass
+        return path
+
     def _default_models_directory(self) -> str:
         docs = os.path.join(os.path.expanduser('~'), 'Documents')
         return os.path.abspath(os.path.join(docs, 'zPrint'))
 
     def _load_config(self) -> dict:
-        self._config_path = os.path.join(self.app_dir, 'config.json')
+        if not getattr(self, '_config_path', None):
+            self._config_path = os.path.join(self._determine_config_dir(), 'config.json')
         defaults = {
             'mode': 'local',
             'local_path': self._default_models_directory(),
@@ -388,6 +404,7 @@ class MainWindow(QMainWindow):
                 config[key] = os.path.abspath(os.path.expanduser(os.path.expandvars(str(value))))
         if not os.path.exists(self._config_path):
             try:
+                os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
                 with open(self._config_path, 'w', encoding='utf-8') as fh:
                     json.dump(config, fh, ensure_ascii=False, indent=2)
             except Exception:
@@ -396,8 +413,9 @@ class MainWindow(QMainWindow):
 
     def _save_config(self) -> None:
         if not getattr(self, '_config_path', None):
-            self._config_path = os.path.join(self.app_dir, 'config.json')
+            self._config_path = os.path.join(self._determine_config_dir(), 'config.json')
         try:
+            os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
             with open(self._config_path, 'w', encoding='utf-8') as fh:
                 json.dump(self.config, fh, ensure_ascii=False, indent=2)
         except Exception:
@@ -604,10 +622,11 @@ class MainWindow(QMainWindow):
             return
 
         if not models:
-            placeholder = QLabel('No models found')
+            placeholder = QLabel('')
             placeholder.setAlignment(Qt.AlignCenter)
-            placeholder.setWordWrap(True)
             placeholder.setProperty('emptyState', True)
+            placeholder.setMinimumSize(200, 200)
+            placeholder.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self.cards = [placeholder]
             self.gallery_layout.addWidget(placeholder, 0, 0)
             self._visible_models = []
