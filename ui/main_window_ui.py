@@ -28,34 +28,30 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout = QVBoxLayout(self.centralwidget)
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.topBar1 = QWidget(self.centralwidget)
-        self.topBar1.setObjectName(u"topBar1")
-        self.topBar1.setAutoFillBackground(False)
-        self.topBar1Layout = QHBoxLayout(self.topBar1)
+        self.topBar1Layout = QHBoxLayout()
         self.topBar1Layout.setObjectName(u"topBar1Layout")
-        self.topBar1Layout.setContentsMargins(0, 0, 0, 0)
-        self.btnThemeToggle = QPushButton(self.topBar1)
+        self.btnThemeToggle = QPushButton(self.centralwidget)
         self.btnThemeToggle.setObjectName(u"btnThemeToggle")
 
         self.topBar1Layout.addWidget(self.btnThemeToggle)
 
-        self.btnReload = QPushButton(self.topBar1)
+        self.btnReload = QPushButton(self.centralwidget)
         self.btnReload.setObjectName(u"btnReload")
 
         self.topBar1Layout.addWidget(self.btnReload)
 
-        self.btnImport = QPushButton(self.topBar1)
+        self.btnImport = QPushButton(self.centralwidget)
         self.btnImport.setObjectName(u"btnImport")
 
         self.topBar1Layout.addWidget(self.btnImport)
 
-        self.btnAddModel = QPushButton(self.topBar1)
+        self.btnAddModel = QPushButton(self.centralwidget)
         self.btnAddModel.setObjectName(u"btnAddModel")
 
         self.topBar1Layout.addWidget(self.btnAddModel)
 
 
-        self.verticalLayout.addWidget(self.topBar1)
+        self.verticalLayout.addLayout(self.topBar1Layout)
 
         self.topBar2Layout = QHBoxLayout()
         self.topBar2Layout.setObjectName(u"topBar2Layout")
@@ -103,8 +99,6 @@ class Ui_MainWindow(object):
     # setupUi
 
     def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"zPrint", None))
-        self.topBar1.setObjectName(QCoreApplication.translate("MainWindow", u"topBar1", None))
         self.btnThemeToggle.setText(QCoreApplication.translate("MainWindow", u"Theme", None))
         self.btnReload.setText(QCoreApplication.translate("MainWindow", u"Reload", None))
         self.btnImport.setText(QCoreApplication.translate("MainWindow", u"Import", None))
@@ -118,5 +112,6 @@ class Ui_MainWindow(object):
 
         self.filterDropdown.setItemText(0, QCoreApplication.translate("MainWindow", u"All Materials", None))
 
+        pass
     # retranslateUi
 

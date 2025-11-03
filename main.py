@@ -4,7 +4,6 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, Q
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QSize
 from PySide6.QtGui import QIcon, QFont, QPixmap, QPainter, QColor
-from PySide6.QtSvg import QSvgRenderer
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -25,7 +24,7 @@ class MainWindow(QMainWindow):
         loaded = loader.load(ui_file)
         ui_file.close()
 
-    # The .ui file's top-level widget is a QMainWindow. We are already a QMainWindow
+        # The .ui file's top-level widget is a QMainWindow. We are already a QMainWindow
         # subclass, so extract the central widget from the loaded UI and set it here.
         if isinstance(loaded, QMainWindow):
             central = loaded.findChild(QWidget, 'centralwidget')
@@ -41,37 +40,21 @@ class MainWindow(QMainWindow):
             self.ui = loaded
             self.setCentralWidget(self.ui)
 
-        # Debug: list some important widgets we expect
-        try:
-            found = []
-            for name in ('topBar1', 'btnAddModel', 'btnThemeToggle', 'scrollAreaWidgetContents'):
-                w = self.findChild(QWidget, name) or (self.ui and self.ui.findChild(QWidget, name))
-                found.append((name, bool(w)))
-            print('UI load: widget presence:', found)
-        except Exception:
-            pass
-
         # Access top bar buttons by object name (use findChild because loader returned
         # a separate object rather than attaching attributes to this instance)
         # We'll collect the top-bar buttons so we can resize them together later.
         self.top_bar_buttons = []
 
-        btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
+    # We'll move the top-row buttons into a new container so the bar can be styled
+    central = self.centralWidget()
+    vlayout = central.layout() if central is not None else None
+
+    btn = self.findChild(QPushButton, 'btnThemeToggle') or (self.ui and self.ui.findChild(QPushButton, 'btnThemeToggle'))
         if btn:
-            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'toggletheme.svg')
-            # prepare SVG icons (white/black) for swapping later
-            self._theme_icon_path = icon_path if os.path.exists(icon_path) else None
-            self._theme_icon_white = None
-            self._theme_icon_black = None
-            if self._theme_icon_path:
-                # create small default icons; real sizing will be applied later
-                try:
-                    self._theme_icon_white = self._icon_from_svg(self._theme_icon_path, '#FFFFFF', 20)
-                    self._theme_icon_black = self._icon_from_svg(self._theme_icon_path, '#000000', 20)
-                    # set a default icon now (will be updated by apply_theme)
-                    btn.setIcon(self._theme_icon_black if not self.dark_theme else self._theme_icon_white)
-                except Exception:
-                    pass
+            icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+            svg_path = os.path.join(icons_dir, 'toggletheme.svg')
+            # store path for tinting; apply_theme will set the appropriate tinted icon
+            self._theme_icon_path = svg_path if os.path.exists(svg_path) else None
             btn.setText('')
             btn.setToolTip('Toggle theme')
             btn.clicked.connect(self.toggle_theme)
@@ -79,6 +62,12 @@ class MainWindow(QMainWindow):
             btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             # keep reference so we can swap the icon color when theme changes
             self.theme_button = btn
+            # placeholders for tinted icons (computed lazily)
+            self._theme_icon_white = None
+            self._theme_icon_black = None
+            self.theme_button = btn
+            self._theme_icon_white = None
+            self._theme_icon_black = None
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnReload') or (self.ui and self.ui.findChild(QPushButton, 'btnReload'))
@@ -98,6 +87,30 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(self.add_model)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.top_bar_buttons.append(btn)
+
+        # Move the top-row widgets into a new container widget so we can style the bar
+        try:
+            if vlayout is not None:
+                # remove the first item (assumed to be the original top bar layout)
+                item = vlayout.takeAt(0)
+                # create a new frame/container for the top bar
+                from PySide6.QtWidgets import QFrame, QHBoxLayout
+                top_bar = QFrame(central)
+                top_bar.setObjectName('topBarFrame')
+                top_bar_layout = QHBoxLayout(top_bar)
+                top_bar_layout.setContentsMargins(6, 6, 6, 6)
+                top_bar_layout.setSpacing(6)
+                # add known buttons into the new layout in order
+                for name in ('btnThemeToggle', 'btnReload', 'btnImport', 'btnAddModel'):
+                    w = self.findChild(QPushButton, name) or (self.ui and self.ui.findChild(QPushButton, name))
+                    if w is not None:
+                        # reparent and add to new layout
+                        w.setParent(top_bar)
+                        top_bar_layout.addWidget(w)
+                # insert the new top_bar back into the vertical layout at position 0
+                vlayout.insertWidget(0, top_bar)
+        except Exception:
+            pass
 
         # apply an initial sizing pass for the top bar buttons
         self._resize_top_buttons(initial=True)
@@ -158,6 +171,18 @@ class MainWindow(QMainWindow):
                     lbl.setStyleSheet('')
                 except Exception:
                     pass
+            # card subtext slightly smaller but still bold
+            sub_pt = max(10, min(18, int(card_pt * 0.85)))
+            for lbl in getattr(self, 'card_subtexts', []):
+                try:
+                    lf = lbl.font() or QFont()
+                    lf.setFamily('Inter')
+                    lf.setPointSize(sub_pt)
+                    lf.setBold(True)
+                    lbl.setFont(lf)
+                    lbl.setStyleSheet('')
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -166,7 +191,12 @@ class MainWindow(QMainWindow):
         try:
             pix = QPixmap(path)
             if pix.isNull():
-                return QIcon()
+                # try rendering via QIcon for SVGs
+                base = QIcon(path)
+                if base.isNull():
+                    return QIcon()
+                # render to a reasonable base size; final iconSize will be set on button
+                pix = base.pixmap(QSize(64, 64))
             out = QPixmap(pix.size())
             out.fill(QColor(0, 0, 0, 0))
             painter = QPainter(out)
@@ -177,22 +207,6 @@ class MainWindow(QMainWindow):
             return QIcon(out)
         except Exception:
             return QIcon()
-
-    def _icon_from_svg(self, path: str, hex_color: str, size: int) -> QIcon:
-        """Render an SVG at the requested square size and tint it to hex_color, returning a QIcon."""
-        try:
-            renderer = QSvgRenderer(path)
-            pix = QPixmap(size, size)
-            pix.fill(QColor(0, 0, 0, 0))
-            painter = QPainter(pix)
-            renderer.render(painter)
-            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-            painter.fillRect(pix.rect(), QColor(hex_color))
-            painter.end()
-            return QIcon(pix)
-        except Exception:
-            # fallback: try tinting a rasterized version
-            return self._tint_icon(path, hex_color)
 
     # Placeholder methods
     def toggle_theme(self):
@@ -210,15 +224,10 @@ class MainWindow(QMainWindow):
         if os.path.exists(qss_path):
             try:
                 with open(qss_path, 'r', encoding='utf-8') as fh:
-                    data = fh.read()
-                    QApplication.instance().setStyleSheet(data)
-                    print(f'Applied QSS: {qss_path} (len={len(data)})')
-                # continue to update themed icons after applying stylesheet
-            except Exception as e:
-                print('Failed to read QSS:', e)
+                    QApplication.instance().setStyleSheet(fh.read())
+                return
+            except Exception:
                 pass
-        else:
-            print('QSS file not found:', qss_path)
 
         # Inline fallback
         if dark:
@@ -235,50 +244,26 @@ class MainWindow(QMainWindow):
         # Update the theme toggle icon to be the opposite color of the button background
         try:
             if hasattr(self, 'theme_button') and self._theme_icon_path:
-                # lazily compute tinted icons using SVG renderer when possible
-                if self._theme_icon_white is None or self._theme_icon_black is None:
-                    try:
-                        self._theme_icon_white = self._icon_from_svg(self._theme_icon_path, '#FFFFFF', 20)
-                        self._theme_icon_black = self._icon_from_svg(self._theme_icon_path, '#000000', 20)
-                    except Exception:
-                        # fallback to raster tint
-                        if self._theme_icon_white is None:
-                            self._theme_icon_white = self._tint_icon(self._theme_icon_path, '#FFFFFF')
-                        if self._theme_icon_black is None:
-                            self._theme_icon_black = self._tint_icon(self._theme_icon_path, '#000000')
+                # lazily compute tinted icons
+                if self._theme_icon_white is None:
+                    self._theme_icon_white = self._tint_icon(self._theme_icon_path, '#FFFFFF')
+                if self._theme_icon_black is None:
+                    self._theme_icon_black = self._tint_icon(self._theme_icon_path, '#000000')
 
                 if dark:
-                    # dark mode: button background is white (per dark.qss) -> icon should be black
-                    if self._theme_icon_black:
-                        self.theme_button.setIcon(self._theme_icon_black)
-                else:
-                    # light mode: button background is black (per light.qss) -> icon should be white
+                    # dark mode: button background is black -> icon should be white
                     if self._theme_icon_white:
                         self.theme_button.setIcon(self._theme_icon_white)
+                else:
+                    # light mode: button background is white -> icon should be black
+                    if self._theme_icon_black:
+                        self.theme_button.setIcon(self._theme_icon_black)
                 # keep icon size consistent with button
                 try:
                     btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
                     self.theme_button.setIconSize(QSize(max(8, btn_h - 8), max(8, btn_h - 8)))
                 except Exception:
                     pass
-
-            # Also update shared icons used in gallery buttons (cache them)
-            icon_color = '#FFFFFF' if dark else '#000000'
-            svg_3d = os.path.join(os.path.dirname(__file__), 'assets', 'icons', '3dview.svg')
-            svg_edit = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'editmodel.svg')
-            try:
-                if os.path.exists(svg_3d):
-                    self._icon_3d = self._icon_from_svg(svg_3d, icon_color, 16)
-                else:
-                    self._icon_3d = None
-                if os.path.exists(svg_edit):
-                    self._icon_edit = self._icon_from_svg(svg_edit, icon_color, 16)
-                else:
-                    self._icon_edit = None
-            except Exception:
-                self._icon_3d = None
-                self._icon_edit = None
-            print('apply_theme: icons cached', bool(self._icon_3d), bool(self._icon_edit))
         except Exception:
             pass
 
@@ -292,7 +277,7 @@ class MainWindow(QMainWindow):
         print("Add new model")
 
     def populate_gallery(self):
-        # Example: Add 4 placeholder cards using a Designer-editable template `ui/model_card.ui`
+        # Example: Add 4 placeholder cards
         # find the scroll area contents widget and its layout that holds the gallery
         container = self.findChild(QWidget, 'scrollAreaWidgetContents')
         if container is None and self.ui is not None:
@@ -303,55 +288,47 @@ class MainWindow(QMainWindow):
             # nothing to attach to
             return
 
-        # Load the model card template UI and instantiate copies using QUiLoader
-        loader = QUiLoader()
         for row in range(2):
             for col in range(2):
-                ui_file = QFile('ui/model_card.ui')
-                ui_file.open(QFile.ReadOnly)
-                card = loader.load(ui_file, self)
-                ui_file.close()
-                if card is None:
-                    continue
+                card = QWidget()
+                layout = QVBoxLayout(card)
+                layout.setContentsMargins(5, 5, 5, 5)
 
-                # Populate fields
-                thumb = card.findChild(QLabel, 'thumbnailLabel')
-                if thumb is not None:
-                    thumb.setText('Thumbnail')
-                    thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                    thumb.setMinimumSize(80, 80)
-                    thumb.setAlignment(Qt.AlignCenter)
-                    thumb.setScaledContents(True)
+                thumbnail = QLabel("Thumbnail")
+                # Allow the thumbnail to expand with the card and keep a minimum size
+                thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                thumbnail.setMinimumSize(80, 80)
+                thumbnail.setAlignment(Qt.AlignCenter)
+                # mark for QSS styling
+                thumbnail.setProperty('thumbnail', True)
+                # If you later set a pixmap, scaledContents=True will make it scale to the label
+                thumbnail.setScaledContents(True)
+                layout.addWidget(thumbnail)
 
-                name_label = card.findChild(QLabel, 'nameLabel')
-                if name_label is not None:
-                    name_label.setText(f'Model {row*2 + col + 1}')
-                    self.card_headers.append(name_label)
+                name_label = QLabel(f"Model {row*2 + col +1}")
+                # mark as a card header and track for dynamic font resizing (bold, not blue)
+                name_label.setProperty('cardHeader', True)
+                # clear any inline color so QSS handles base color; we'll set font dynamically
+                name_label.setStyleSheet("")
+                layout.addWidget(name_label)
+                # store reference for dynamic resizing
+                self.card_headers.append(name_label)
 
-                time_label = card.findChild(QLabel, 'timeLabel')
-                if time_label is not None:
-                    time_label.setText('Print time: 1h30m')
+                time_label = QLabel("Print time: 1h30m")
+                time_label.setProperty('cardSub', True)
+                time_label.setStyleSheet("")
+                layout.addWidget(time_label)
+                # store reference for dynamic resizing
+                if not hasattr(self, 'card_subtexts'):
+                    self.card_subtexts = []
+                self.card_subtexts.append(time_label)
 
-                btn_3d = card.findChild(QPushButton, 'btn3d')
-                btn_edit = card.findChild(QPushButton, 'btnEditModel')
-                # set icons for these buttons using cached icons if available
-                try:
-                    if hasattr(self, '_icon_3d') and self._icon_3d:
-                        if btn_3d is not None:
-                            btn_3d.setIcon(self._icon_3d)
-                    else:
-                        svg_3d = os.path.join(os.path.dirname(__file__), 'assets', 'icons', '3dview.svg')
-                        if os.path.exists(svg_3d) and btn_3d is not None:
-                            btn_3d.setIcon(self._icon_from_svg(svg_3d, '#FFFFFF' if self.dark_theme else '#000000', 16))
-                    if hasattr(self, '_icon_edit') and self._icon_edit:
-                        if btn_edit is not None:
-                            btn_edit.setIcon(self._icon_edit)
-                    else:
-                        svg_edit = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'editmodel.svg')
-                        if os.path.exists(svg_edit) and btn_edit is not None:
-                            btn_edit.setIcon(self._icon_from_svg(svg_edit, '#FFFFFF' if self.dark_theme else '#000000', 16))
-                except Exception:
-                    pass
+                btn_layout = QHBoxLayout()
+                btn_3d = QPushButton("3D View")
+                btn_edit = QPushButton("Edit")
+                btn_layout.addWidget(btn_3d)
+                btn_layout.addWidget(btn_edit)
+                layout.addLayout(btn_layout)
 
                 gallery_layout.addWidget(card, row, col)
 
@@ -362,15 +339,7 @@ if __name__ == "__main__":
         app.setFont(QFont('Inter', 13))
     except Exception:
         pass
-    # set application icon (logo.svg)
-    try:
-        logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'logo.svg')
-        if os.path.exists(logo_path):
-            app.setWindowIcon(QIcon(logo_path))
-    except Exception:
-        pass
     window = MainWindow()
-    window.setWindowTitle("zPrint")
     window.show()
     # Run an initial sizing pass after show to pick up platform metrics
     from PySide6.QtCore import QTimer

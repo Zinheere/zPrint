@@ -10,20 +10,10 @@
     <height>700</height>
    </rect>
   </property>
-    <property name="windowTitle">
-     <string>zPrint</string>
-    </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
     <item>
-         <widget class="QWidget" name="topBar1">
-            <property name="objectName">
-             <string>topBar1</string>
-            </property>
-            <property name="autoFillBackground">
-             <bool>false</bool>
-            </property>
-            <layout class="QHBoxLayout" name="topBar1Layout">
+     <layout class="QHBoxLayout" name="topBar1Layout">
       <item>
        <widget class="QPushButton" name="btnThemeToggle">
         <property name="text">
@@ -52,8 +42,7 @@
         </property>
        </widget>
       </item>
-            </layout>
-         </widget>
+     </layout>
     </item>
     <item>
      <layout class="QHBoxLayout" name="topBar2Layout">

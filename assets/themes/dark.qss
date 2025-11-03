@@ -52,25 +52,21 @@ QPushButton#btnAddModel {
   font-weight: 700;
 }
 
-/* Make the theme toggle button black */
-/* Theme toggle styled white in dark mode (icon will be tinted opposite color) */
+/* Theme toggle: black in dark mode */
 QPushButton#btnThemeToggle {
-  background-color: #FFFFFF;
-  color: #000000;
-  border: 1px solid #E0E6ED;
-}
-
-/* Top bar background */
-QWidget#topBar1 {
-  background-color: #00457C; /* dark blue top bar */
+  background-color: #000000;
   color: #FFFFFF;
+  border: 1px solid #111111;
 }
 
-QPushButton#btnEditModel {
-  background-color: #007AFF;
+/* Top-bar buttons (Reload, Import) use a secondary blue distinct from Add Model */
+QPushButton#btnReload, QPushButton#btnImport {
+  background-color: #1A73E8; /* secondary blue */
   color: #FFFFFF;
   border: none;
-  font-weight: 700;
+}
+QPushButton#btnReload:hover, QPushButton#btnImport:hover {
+  background-color: #185ABC;
 }
 
 /* Success / Error indicators */
@@ -84,25 +80,7 @@ QToolTip {
 }
 
 /* Gallery thumbnail style */
-QLabel#thumbnailLabel {
+QLabel[thumbnail="true"] {
   border: 1px solid #3b3f41;
-}
-
-/* Card surface for model cards (editable via ui/model_card.ui) */
-QWidget#modelCardTemplate {
-  background-color: #232629; /* slightly lighter card surface on dark theme */
-  border: 1px solid #3b3f41; /* dark medium gray border */
-  border-radius: 8px;
-  padding: 8px;
-}
-
-QWidget#modelCardTemplate QLabel#nameLabel {
-  color: #e6e6e6;
-  font-weight: 600;
-}
-
-QWidget#modelCardTemplate QLabel#timeLabel {
-  color: #9aa6b2;
-  font-size: 10pt;
 }
 
