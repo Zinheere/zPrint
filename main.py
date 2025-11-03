@@ -32,7 +32,7 @@ from ui.new_model_dialog import NewModelDialog
 from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
 
-APP_VERSION = "0.30"
+APP_VERSION = "0.30 beta"
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -351,10 +351,10 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _tint_icon(self, path: str, hex_color: str, size: QSize | None = None) -> QIcon:
-        """Render an SVG (or image) and tint to hex_color. Uses QSvgRenderer if available."""
+    def _tint_icon(self, path: str, hex_colour: str, size: QSize | None = None) -> QIcon:
+        """Render an SVG (or image) and tint to hex_colour. Uses QSvgRenderer if available."""
         try:
-            return tint_icon(path, hex_color, size)
+            return tint_icon(path, hex_colour, size)
         except Exception:
             return QIcon()
 
@@ -884,8 +884,8 @@ class MainWindow(QMainWindow):
             self._apply_thumbnail_pixmap(obj)  # type: ignore[arg-type]
         return super().eventFilter(obj, event)
 
-    def _icon_color_for_theme(self) -> str:
-        """Color for icons based on current theme: black on light, white on dark."""
+    def _icon_colour_for_theme(self) -> str:
+        """Colour for icons based on current theme: black on light, white on dark."""
         return '#000000' if not getattr(self, 'dark_theme', False) else '#FFFFFF'
 
     def _compute_icon_dim(self, widget) -> int:
@@ -898,7 +898,7 @@ class MainWindow(QMainWindow):
 
     def _update_all_tinted_icons(self):
         """Reapply tinted icons for all registered targets (toolbar/search/card)."""
-        color = self._icon_color_for_theme()
+        colour = self._icon_colour_for_theme()
         for entry in list(self._icon_targets):
             kind = entry.get('kind')
             path = entry.get('path')
@@ -909,7 +909,7 @@ class MainWindow(QMainWindow):
                 if not btn:
                     continue
                 dim = self._compute_icon_dim(btn)
-                icon = self._tint_icon(path, color, QSize(dim, dim))
+                icon = self._tint_icon(path, colour, QSize(dim, dim))
                 if icon and not icon.isNull():
                     btn.setIcon(icon)
                     try:
@@ -922,7 +922,7 @@ class MainWindow(QMainWindow):
                 if not act or not w:
                     continue
                 dim = self._compute_icon_dim(w)
-                icon = self._tint_icon(path, color, QSize(dim, dim))
+                icon = self._tint_icon(path, colour, QSize(dim, dim))
                 if icon and not icon.isNull():
                     act.setIcon(icon)
 
@@ -971,8 +971,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'theme_button') and theme_icon_path:
             btn_h = self.theme_button.height() or self.theme_button.sizeHint().height() or 28
             dim = min(24, max(16, btn_h - 10))
-            color = '#000000' if not dark else '#FFFFFF'
-            icon = self._tint_icon(theme_icon_path, color, QSize(dim, dim))
+            colour = '#000000' if not dark else '#FFFFFF'
+            icon = self._tint_icon(theme_icon_path, colour, QSize(dim, dim))
             if icon and not icon.isNull():
                 self.theme_button.setIcon(icon)
                 self.theme_button.setIconSize(QSize(dim, dim))
