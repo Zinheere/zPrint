@@ -73,18 +73,48 @@ class MainWindow(QMainWindow):
         if btn:
             btn.clicked.connect(self.reload_files)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            # try to add an icon if present
+            try:
+                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+                for cand in ('reload.svg', 'refresh.svg'):
+                    p = os.path.join(icons_dir, cand)
+                    if os.path.exists(p):
+                        btn.setIcon(QIcon(p))
+                        break
+            except Exception:
+                pass
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnImport') or (self.ui and self.ui.findChild(QPushButton, 'btnImport'))
         if btn:
             btn.clicked.connect(self.import_files)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            # try to add an icon if present
+            try:
+                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+                for cand in ('import.svg', 'upload.svg', 'open.svg'):
+                    p = os.path.join(icons_dir, cand)
+                    if os.path.exists(p):
+                        btn.setIcon(QIcon(p))
+                        break
+            except Exception:
+                pass
             self.top_bar_buttons.append(btn)
 
         btn = self.findChild(QPushButton, 'btnAddModel') or (self.ui and self.ui.findChild(QPushButton, 'btnAddModel'))
         if btn:
             btn.clicked.connect(self.add_model)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            # try to add an icon if present
+            try:
+                icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+                for cand in ('addmodel.svg', 'add.svg', 'plus.svg', 'new.svg'):
+                    p = os.path.join(icons_dir, cand)
+                    if os.path.exists(p):
+                        btn.setIcon(QIcon(p))
+                        break
+            except Exception:
+                pass
             self.top_bar_buttons.append(btn)
 
         # Move the top-row widgets into a new container widget so we can style the bar
@@ -125,6 +155,17 @@ class MainWindow(QMainWindow):
             try:
                 # Make it expand horizontally and be fixed vertically (we'll set its height on resize)
                 search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                # add leading search icon if available
+                try:
+                    icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+                    for cand in ('search.svg', 'magnify.svg', 'magnifier.svg'):
+                        p = os.path.join(icons_dir, cand)
+                        if os.path.exists(p):
+                            from PySide6.QtWidgets import QLineEdit as _QLE
+                            search.addAction(QIcon(p), _QLE.LeadingPosition)
+                            break
+                except Exception:
+                    pass
             except Exception:
                 pass
             self.top_bar_inputs.append(search)
@@ -178,6 +219,10 @@ class MainWindow(QMainWindow):
                     else:
                         f.setBold(False)
                     btn.setFont(f)
+                    # Adjust icon size for icon-bearing buttons
+                    if not btn.icon().isNull():
+                        icon_dim = min(22, max(12, target_h - 14))
+                        btn.setIconSize(QSize(icon_dim, icon_dim))
                 except Exception:
                     # don't fail on font errors
                     pass
