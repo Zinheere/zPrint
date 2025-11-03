@@ -34,7 +34,7 @@ MANIFEST
 !packaging/pyinstaller/zprint.spec
 config.json
 project.todo
-builds
+installers
 
 # Installer logs
 pip-log.txt
