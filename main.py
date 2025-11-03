@@ -164,8 +164,8 @@ class MainWindow(QMainWindow):
                     lf.setPointSize(card_pt)
                     lf.setBold(True)
                     lbl.setFont(lf)
-                    # ensure not colored blue by QSS
-                    lbl.setStyleSheet('')
+                    # ensure the header text has no boxed background
+                    lbl.setStyleSheet('background: transparent;')
                 except Exception:
                     pass
             # card subtext slightly smaller but still bold
@@ -175,9 +175,10 @@ class MainWindow(QMainWindow):
                     lf = lbl.font() or QFont()
                     lf.setFamily('Inter')
                     lf.setPointSize(sub_pt)
-                    lf.setBold(True)
+                    lf.setBold(False)
                     lbl.setFont(lf)
-                    lbl.setStyleSheet('')
+                    # ensure subtext has no boxed background
+                    lbl.setStyleSheet('background: transparent;')
                 except Exception:
                     pass
         except Exception:
@@ -218,25 +219,29 @@ class MainWindow(QMainWindow):
         qss_name = 'dark.qss' if dark else 'light.qss'
         qss_path = os.path.join(themes_dir, qss_name)
 
+        qss_loaded = False
         if os.path.exists(qss_path):
             try:
+                # Try to load the QSS file. Mark as loaded so we don't later
+                # override it with the inline fallback.
                 with open(qss_path, 'r', encoding='utf-8') as fh:
                     QApplication.instance().setStyleSheet(fh.read())
-                return
+                    qss_loaded = True
             except Exception:
-                pass
+                qss_loaded = False
 
-        # Inline fallback
-        if dark:
-            dark = '''
-            QWidget { background-color: #2b2b2b; color: #e6e6e6; }
-            QLineEdit, QComboBox, QScrollArea { background-color: #3c3c3c; }
-            QPushButton { background-color: #444444; color: #e6e6e6; border: none; padding: 4px; }
-            QPushButton:pressed { background-color: #555555; }
-            '''
-            QApplication.instance().setStyleSheet(dark)
-        else:
-            QApplication.instance().setStyleSheet('')
+        # Only apply the inline fallback if we failed to load a QSS file
+        if not qss_loaded:
+            if dark:
+                dark = '''
+                QWidget { background-color: #2b2b2b; color: #e6e6e6; }
+                QLineEdit, QComboBox, QScrollArea { background-color: #3c3c3c; }
+                QPushButton { background-color: #444444; color: #e6e6e6; border: none; padding: 4px; }
+                QPushButton:pressed { background-color: #555555; }
+                '''
+                QApplication.instance().setStyleSheet(dark)
+            else:
+                QApplication.instance().setStyleSheet('')
 
         # Update the theme toggle icon to be the opposite color of the button background
         try:
@@ -305,14 +310,15 @@ class MainWindow(QMainWindow):
                 name_label = QLabel(f"Model {row*2 + col +1}")
                 # mark as a card header and track for dynamic font resizing (bold, not blue)
                 name_label.setProperty('cardHeader', True)
-                # clear any inline color so QSS handles base color; we'll set font dynamically
-                name_label.setStyleSheet("")
+                # remove any boxed background so the text appears directly on the card
+                name_label.setStyleSheet('background: transparent;')
                 layout.addWidget(name_label)
                 # store reference for dynamic resizing
                 self.card_headers.append(name_label)
                 time_label = QLabel("Print time: 1h30m")
                 time_label.setProperty('cardSub', True)
-                time_label.setStyleSheet("")
+                # remove boxed background from the subtext as well
+                time_label.setStyleSheet('background: transparent;')
                 layout.addWidget(time_label)
                 # store reference for dynamic resizing
                 if not hasattr(self, 'card_subtexts'):
@@ -328,10 +334,10 @@ class MainWindow(QMainWindow):
                 edit_svg = os.path.join(icons_dir, 'editmodel.svg')
                 if os.path.exists(view_svg):
                     btn_3d.setIcon(QIcon(view_svg))
-                    btn_3d.setIconSize(QSize(16, 16))
+                    btn_3d.setIconSize(QSize(18, 18))
                 if os.path.exists(edit_svg):
                     btn_edit.setIcon(QIcon(edit_svg))
-                    btn_edit.setIconSize(QSize(16, 16))
+                    btn_edit.setIconSize(QSize(18, 18))
                 btn_layout.addWidget(btn_3d)
                 btn_layout.addWidget(btn_edit)
                 layout.addLayout(btn_layout)

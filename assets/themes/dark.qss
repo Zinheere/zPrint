@@ -23,6 +23,34 @@ QLineEdit, QComboBox, QScrollArea, QTextEdit {
   border-radius: 4px;
 }
 
+/* Refined dropdown (QComboBox) aesthetics */
+QComboBox {
+  padding: 6px 32px 6px 10px; /* space for arrow */
+}
+QComboBox:hover {
+  border-color: #4b4f51;
+}
+QComboBox:focus {
+  border-color: #007AFF;
+}
+/* Drop-down button area */
+QComboBox::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: top right;
+  width: 28px;
+  border-left: 1px solid #3b3f41;
+  background: #2b2f31;
+}
+/* Popup list */
+QComboBox QAbstractItemView {
+  background: #2f3335;
+  color: #e6e6e6;
+  border: 1px solid #3b3f41;
+  selection-background-color: #063A6B; /* cohesive with top bar */
+  selection-color: #FFFFFF;
+  outline: 0;
+}
+
 /* Primary action styling: use same blue for contrast on dark.
    Buttons remain colored to be visible on dark backgrounds. */
 /* Default button style - neutral on dark background */
