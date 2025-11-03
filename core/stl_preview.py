@@ -18,26 +18,36 @@ __all__ = ["render_stl_preview"]
 
 
 def render_stl_preview(
-	stl_path: str | Path,
+	stl_path: str | Path | None,
 	size: QSize | tuple[int, int] = QSize(320, 240),
 	*,
 	dark_theme: bool = False,
+	mesh: trimesh.Trimesh | None = None,
+	view_angles: tuple[float, float] | None = None,
+	distance_scale: float = 1.0,
+	quality_scale: float = 1.0,
 ) -> QPixmap | None:
 	"""Render an STL file into a tinted `QPixmap` for gallery previews.
 
 	The mesh is loaded with `trimesh`, plotted with Matplotlib's 3D toolkit,
 	and rasterised off-screen so PySide can display it without an OpenGL
-	widget. Returns `None` if the STL cannot be parsed or rendered.
+	wigdet. Returns `None` if the STL cannot be parsed or rendered. The
+	`quality_scale` argument allows callers to trade detail for speed during
+	interactive updates (valid range 0.3-1.0).
 	"""
 
-	mesh = _load_mesh(stl_path)
+	if mesh is None:
+		if not stl_path:
+			return None
+		mesh = _load_mesh(stl_path)
 	if mesh is None or mesh.is_empty:
 		return None
 
 	target_size = _coerce_qsize(size)
-	width = max(64, target_size.width())
-	height = max(64, target_size.height())
-	dpi = 100
+	quality_scale = float(np.clip(quality_scale, 0.3, 1.0))
+	width = max(64, int(target_size.width() * quality_scale))
+	height = max(64, int(target_size.height() * quality_scale))
+	dpi = int(70 + 30 * quality_scale)
 
 	figure = Figure(figsize=(width / dpi, height / dpi), dpi=dpi)
 	background, face_color, edge_color = _palette(dark_theme)
@@ -60,7 +70,7 @@ def render_stl_preview(
 		)
 		axis.add_collection3d(collection)
 
-	_configure_view(axis, mesh)
+	_configure_view(axis, mesh, view_angles=view_angles, distance_scale=distance_scale)
 
 	canvas.draw()
 	image = np.asarray(canvas.buffer_rgba()).copy()
@@ -126,9 +136,23 @@ def _palette(dark: bool) -> tuple[str, tuple[float, float, float, float], tuple[
 	)
 
 
-def _configure_view(axis, mesh: trimesh.Trimesh) -> None:
-	axis.view_init(elev=26, azim=35)
-	axis.dist = 7  # type: ignore[attr-defined]
+def _configure_view(
+	axis,
+	mesh: trimesh.Trimesh,
+	*,
+	view_angles: tuple[float, float] | None = None,
+	distance_scale: float = 1.0,
+) -> None:
+	if view_angles is None:
+		elev, azim = 26, 35
+	else:
+		elev, azim = view_angles
+	axis.view_init(elev=elev, azim=azim)
+	try:
+		distance = max(0.2, 7.0 * float(distance_scale))
+		axis.dist = distance  # type: ignore[attr-defined]
+	except Exception:
+		pass
 
 	bounds = mesh.bounds
 	if bounds.size == 0:

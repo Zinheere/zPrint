@@ -29,6 +29,7 @@ from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
 from ui.new_model_dialog import NewModelDialog
 from ui.edit_model_dialog import EditModelDialog
+from ui.stl_preview_dialog import StlPreviewDialog
 
 APP_VERSION = "0.20 Beta"
 
@@ -1183,7 +1184,20 @@ class MainWindow(QMainWindow):
         self.reload_files()
 
     def view_model(self, model_data: dict):
-        print(f"Preview 3D model: {model_data.get('name')} from {model_data.get('folder')}")
+        if not model_data:
+            return
+
+        try:
+            dialog = StlPreviewDialog(
+                model_data,
+                dark_theme=getattr(self, 'dark_theme', False),
+                parent=self,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, '3D Preview', f'Unable to open preview:\n{exc}')
+            return
+
+        dialog.exec()
 
     def edit_model(self, model_data: dict):
         if not model_data:

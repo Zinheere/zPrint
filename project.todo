@@ -1,16 +1,16 @@
 # Project TODO
 
 ## Backlog
-- [ ] Add 3D preview display using popup window for selected model (3d view button)
 - [ ] Build metadata edit dialog and persistence
-- [ ] Make 3d model preview work with 3mf files
+- [ ] Make 3d model preview & interactive model viewer work with 3mf files
 - [ ] update program to reflect v0.030
 - [ ] v0.30 release notes
-- [ ] remove windows warning
+- [ ] remove windows smartscreen warning
 v0.30 misc updates (for github copilot):
 make the app show a loading bar instead of not responding when loading large file, also save mode (microsd/local) in config json so it is used as the default in save location dropdown in the add model menu and also save the theme every time it is switched. make sure "system volume information doesnt show as a model lmao
 
 ## Completed
+- [x] Add 3D preview display using popup window for selected model (3d view button)
 - [x] Load models from configuration and hydrate gallery cards
 - [x] Enable search, sorting, and material filtering controls
 - [x] Implement import workflow for new models (dialog + packaging)

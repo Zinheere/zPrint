@@ -9,7 +9,10 @@ block_cipher = None
 
 PROJECT_ROOT = os.path.abspath(os.getcwd())
 def _collect_hidden_imports() -> list:
-    hidden = set(['PySide6.QtSvg', 'PySide6.QtSvgWidgets'])
+    hidden = set([
+        'PySide6.QtSvg',
+        'PySide6.QtSvgWidgets',
+    ])
     try:
         hidden.update(collect_submodules('core'))
     except Exception:
