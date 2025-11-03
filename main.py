@@ -6,10 +6,12 @@ from datetime import datetime
 from functools import partial
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QDialog,
     QMainWindow,
     QMessageBox,
     QLabel,
+    QInputDialog,
     QPushButton,
     QVBoxLayout,
     QHBoxLayout,
@@ -347,35 +349,73 @@ class MainWindow(QMainWindow):
         except Exception:
             return QIcon()
 
+    def _default_models_directory(self) -> str:
+        docs = os.path.join(os.path.expanduser('~'), 'Documents')
+        return os.path.abspath(os.path.join(docs, 'zPrint'))
+
     def _load_config(self) -> dict:
+        self._config_path = os.path.join(self.app_dir, 'config.json')
         defaults = {
             'mode': 'local',
-            'local_path': os.path.join(self.app_dir, 'testfiles'),
+            'local_path': self._default_models_directory(),
+            'microsd_path': '',
             'theme': 'light'
         }
-        config_path = os.path.join(self.app_dir, 'testfiles', 'config.json')
+        data = {}
+        if os.path.exists(self._config_path):
+            try:
+                with open(self._config_path, 'r', encoding='utf-8') as fh:
+                    data = json.load(fh) or {}
+            except Exception:
+                data = {}
+        else:
+            legacy_path = os.path.join(self.app_dir, 'testfiles', 'config.json')
+            if os.path.exists(legacy_path):
+                try:
+                    with open(legacy_path, 'r', encoding='utf-8') as fh:
+                        data = json.load(fh) or {}
+                except Exception:
+                    data = {}
+        config = defaults.copy()
+        config.update(data)
+        if not config.get('local_path'):
+            config['local_path'] = self._default_models_directory()
+        if 'microsd_path' not in config:
+            config['microsd_path'] = ''
+        for key in ('local_path', 'microsd_path'):
+            value = config.get(key)
+            if value:
+                config[key] = os.path.abspath(os.path.expanduser(os.path.expandvars(str(value))))
+        if not os.path.exists(self._config_path):
+            try:
+                with open(self._config_path, 'w', encoding='utf-8') as fh:
+                    json.dump(config, fh, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+        return config
+
+    def _save_config(self) -> None:
+        if not getattr(self, '_config_path', None):
+            self._config_path = os.path.join(self.app_dir, 'config.json')
         try:
-            with open(config_path, 'r', encoding='utf-8') as fh:
-                data = json.load(fh)
-                defaults.update(data)
-        except FileNotFoundError:
-            pass
+            with open(self._config_path, 'w', encoding='utf-8') as fh:
+                json.dump(self.config, fh, ensure_ascii=False, indent=2)
         except Exception:
             pass
-        return defaults
 
     def _resolve_models_root(self) -> str:
         mode = (self.config.get('mode') or 'local').lower()
         path = None
         if mode == 'microsd':
-            path = self.config.get('microsd_path') or self.config.get('local_path')
+            path = self.config.get('microsd_path') or os.path.abspath(os.path.sep)
         else:
-            path = self.config.get('local_path')
-        if not path:
-            path = os.path.join(self.app_dir, 'testfiles')
-        path = os.path.expandvars(os.path.expanduser(path))
-        if not os.path.isabs(path):
-            path = os.path.abspath(os.path.join(self.app_dir, path))
+            path = self.config.get('local_path') or self._default_models_directory()
+        path = os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
+        if not os.path.isdir(path):
+            try:
+                os.makedirs(path, exist_ok=True)
+            except Exception:
+                pass
         return path
 
     def _resolve_icon_path(self, candidates) -> str | None:
@@ -1003,8 +1043,98 @@ class MainWindow(QMainWindow):
         finally:
             self._hide_loading()
 
+    def _pick_existing_models_folder(self, start_dir: str) -> str | None:
+        dialog = QFileDialog(self, 'Select Models Folder')
+        dialog.setFileMode(QFileDialog.Directory)
+        dialog.setOption(QFileDialog.ShowDirsOnly, True)
+        directory = start_dir if os.path.isdir(start_dir) else os.path.expanduser('~')
+        dialog.setDirectory(directory)
+        if dialog.exec() != QFileDialog.Accepted:
+            return None
+        selected = dialog.selectedFiles()
+        if not selected:
+            return None
+        chosen = os.path.abspath(selected[0])
+        if not os.path.isdir(chosen):
+            return None
+        return chosen
+
+    def _create_new_models_folder(self, start_dir: str) -> str | None:
+        base_dir = QFileDialog.getExistingDirectory(
+            self,
+            'Choose Parent Directory',
+            start_dir if os.path.isdir(start_dir) else os.path.expanduser('~')
+        )
+        if not base_dir:
+            return None
+        name, ok = QInputDialog.getText(self, 'Create Models Folder', 'Folder name:', text='zPrint Models')
+        if not ok:
+            return None
+        name = name.strip()
+        if not name:
+            QMessageBox.warning(self, 'Create Models Folder', 'Folder name cannot be empty.')
+            return None
+        new_path = os.path.abspath(os.path.join(base_dir, name))
+        try:
+            os.makedirs(new_path, exist_ok=True)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Create Models Folder', f'Unable to create folder:\n{exc}')
+            return None
+        self._initialize_models_folder(new_path)
+        return new_path
+
+    def _initialize_models_folder(self, folder_path: str) -> None:
+        try:
+            os.makedirs(folder_path, exist_ok=True)
+        except Exception:
+            return
+        stub_path = os.path.join(folder_path, 'config.json')
+        if not os.path.exists(stub_path):
+            payload = {
+                'name': os.path.basename(os.path.abspath(folder_path)) or 'models',
+                'created': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+                'models': []
+            }
+            try:
+                with open(stub_path, 'w', encoding='utf-8') as fh:
+                    json.dump(payload, fh, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
     def import_files(self):
-        print("Import files")
+        start_mode = (self.config.get('mode') or 'local').lower()
+        if start_mode == 'microsd':
+            default_dir = self.config.get('microsd_path') or os.path.abspath(os.path.sep)
+        else:
+            default_dir = self.config.get('local_path') or self._default_models_directory()
+        default_dir = os.path.abspath(os.path.expandvars(os.path.expanduser(default_dir)))
+
+        chooser = QMessageBox(self)
+        chooser.setIcon(QMessageBox.Question)
+        chooser.setWindowTitle('Import Models')
+        chooser.setText('How would you like to set up your models folder?')
+        existing_btn = chooser.addButton('Select Existing Folder', QMessageBox.AcceptRole)
+        create_btn = chooser.addButton('Create New Folder', QMessageBox.ActionRole)
+        cancel_btn = chooser.addButton(QMessageBox.Cancel)
+        chooser.exec()
+        clicked = chooser.clickedButton()
+        if clicked is None or clicked is cancel_btn:
+            return
+        if clicked is create_btn:
+            chosen = self._create_new_models_folder(default_dir)
+        else:
+            chosen = self._pick_existing_models_folder(default_dir)
+        if not chosen:
+            return
+
+        chosen = os.path.abspath(os.path.expandvars(os.path.expanduser(chosen)))
+        if start_mode == 'microsd':
+            self.config['microsd_path'] = chosen
+        else:
+            self.config['local_path'] = chosen
+        self._save_config()
+        self.models_root = self._resolve_models_root()
+        self.reload_files()
 
     def add_model(self):
         try:

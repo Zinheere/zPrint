@@ -5,9 +5,8 @@ import shutil
 from datetime import datetime
 from typing import List, Optional
 
-from PySide6.QtCore import QFile, QSize, Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -23,17 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.stl_preview import render_stl_preview
-
-
-class _DialogLoader(QUiLoader):
-    def __init__(self, base_instance: QDialog):
-        super().__init__(base_instance)
-        self._base_instance = base_instance
-
-    def createWidget(self, className, parent=None, name=""):
-        if parent is None and className == "QDialog":
-            return self._base_instance
-        return super().createWidget(className, parent, name)
+from ui.new_model_dialog_ui import Ui_NewModelDialog
 
 
 class NewModelDialog(QDialog):
@@ -48,34 +37,32 @@ class NewModelDialog(QDialog):
         self._preview_generated = False
         self._stl_source_path: Optional[str] = None
 
-        self._load_ui()
+        self._setup_ui()
         self._wire_controls()
         self._apply_defaults()
 
-    def _load_ui(self) -> None:
-        ui_path = os.path.join(self.app_dir, "ui", "new_model_dialog.ui")
-        file = QFile(ui_path)
-        if not file.exists():
-            raise FileNotFoundError(f"Missing UI definition: {ui_path}")
-        if not file.open(QFile.ReadOnly):
-            raise IOError(f"Unable to open UI file: {ui_path}")
-        try:
-            loader = _DialogLoader(self)
-            loader.load(file, self)
-        finally:
-            file.close()
+    def _setup_ui(self) -> None:
+        self.ui = Ui_NewModelDialog()
+        self.ui.setupUi(self)
+        self.setModal(True)
 
-        self.name_edit: QLineEdit = self.findChild(QLineEdit, "lineEditName")
-        self.stl_edit: QLineEdit = self.findChild(QLineEdit, "lineEditStlPath")
-        self.preview_label: QLabel = self.findChild(QLabel, "previewLabel")
-        self.choose_preview_btn: QPushButton = self.findChild(QPushButton, "btnChoosePreview")
-        self.browse_stl_btn: QPushButton = self.findChild(QPushButton, "btnBrowseStl")
-        self.add_gcode_btn: QPushButton = self.findChild(QPushButton, "btnAddGcode")
-        self.remove_gcode_btn: QPushButton = self.findChild(QPushButton, "btnRemoveGcode")
-        self.location_combo: QComboBox = self.findChild(QComboBox, "comboLocation")
-        self.destination_edit: QLineEdit = self.findChild(QLineEdit, "lineEditDestination")
-        self.browse_destination_btn: QPushButton = self.findChild(QPushButton, "btnBrowseDestination")
-        self.gcode_table: QTableWidget = self.findChild(QTableWidget, "tableGcodes")
+        self.name_edit: QLineEdit = self.ui.lineEditName
+        self.stl_edit: QLineEdit = self.ui.lineEditStlPath
+        self.preview_label: QLabel = self.ui.previewLabel
+        self.choose_preview_btn: QPushButton = self.ui.btnChoosePreview
+        self.browse_stl_btn: QPushButton = self.ui.btnBrowseStl
+        self.add_gcode_btn: QPushButton = self.ui.btnAddGcode
+        self.remove_gcode_btn: QPushButton = self.ui.btnRemoveGcode
+        self.location_combo: QComboBox = self.ui.comboLocation
+        self.destination_edit: QLineEdit = self.ui.lineEditDestination
+        self.browse_destination_btn: QPushButton = self.ui.btnBrowseDestination
+        self.gcode_table: QTableWidget = self.ui.tableGcodes
+        self.button_box: QDialogButtonBox = self.ui.buttonBox
+
+        if self.minimumWidth() <= 0 or self.minimumHeight() <= 0:
+            self.setMinimumSize(560, 520)
+        if self.width() <= 0 or self.height() <= 0:
+            self.resize(640, 600)
 
     def _wire_controls(self) -> None:
         if self.gcode_table is not None:
@@ -83,7 +70,11 @@ class NewModelDialog(QDialog):
             self.gcode_table.setHorizontalHeaderLabels(["File", "Material", "Print Time"])
             self.gcode_table.setSelectionBehavior(QAbstractItemView.SelectRows)
             self.gcode_table.setSelectionMode(QAbstractItemView.SingleSelection)
-            self.gcode_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.SelectedClicked)
+            self.gcode_table.setEditTriggers(
+                QAbstractItemView.DoubleClicked
+                | QAbstractItemView.EditKeyPressed
+                | QAbstractItemView.SelectedClicked
+            )
             header = self.gcode_table.horizontalHeader()
             if header is not None:
                 header.setStretchLastSection(True)
@@ -101,10 +92,9 @@ class NewModelDialog(QDialog):
         if self.browse_destination_btn is not None:
             self.browse_destination_btn.clicked.connect(self._on_browse_destination)
 
-        button_box = self.findChild(QDialogButtonBox, "buttonBox")
-        if button_box is not None:
-            button_box.accepted.connect(self._on_accept)
-            button_box.rejected.connect(self.reject)
+        if self.button_box is not None:
+            self.button_box.accepted.connect(self._on_accept)
+            self.button_box.rejected.connect(self.reject)
 
     def _apply_defaults(self) -> None:
         if self.location_combo is not None:
