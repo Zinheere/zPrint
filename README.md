@@ -8,6 +8,13 @@
 
 ## Release Notes
 
+### 0.30 (2025-11-03)
+
+- Added determinate loading overlays for gallery refreshes and the VisPy preview dialog so the window stays responsive during heavy work.
+- Expanded the Edit Model dialog with preview swapping, metadata validation, and full G-code management (add, remove, copy, delete).
+- Persisted theme selection and default storage mode immediately on change to keep import defaults in sync across sessions.
+- Improved 3MF preview generation by rendering multi-part models directly and falling back to embedded thumbnails when available.
+
 ### 0.20 Beta (2025-11-03)
 
 - Replaced the STL preview dialog with a VisPy-powered renderer for smooth, GPU-accelerated orbit and zoom.

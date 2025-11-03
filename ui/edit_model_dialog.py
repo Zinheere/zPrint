@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.stl_preview import render_stl_preview
+
 
 class EditModelDialog(QDialog):
     """Dialog for editing model metadata and optionally deleting the model."""
@@ -44,6 +46,7 @@ class EditModelDialog(QDialog):
         self._preview_pixmap: QPixmap | None = None
         self.pending_gcode_copies: list[dict] = []
         self.gcode_files_to_delete: list[str] = []
+        self.generated_preview_pixmap: QPixmap | None = None
 
         self._load_metadata()
         self._build_ui()
@@ -85,8 +88,13 @@ class EditModelDialog(QDialog):
         self.preview_label.setWordWrap(True)
         preview_box.addWidget(self.preview_label)
 
+        buttons_row = QHBoxLayout()
         self.choose_preview_button = QPushButton("Change Preview…", self)
-        preview_box.addWidget(self.choose_preview_button, alignment=Qt.AlignLeft)
+        self.regenerate_preview_button = QPushButton("Regenerate Preview", self)
+        buttons_row.addWidget(self.choose_preview_button)
+        buttons_row.addWidget(self.regenerate_preview_button)
+        buttons_row.addStretch(1)
+        preview_box.addLayout(buttons_row)
 
         layout.addLayout(preview_box)
 
@@ -132,6 +140,7 @@ class EditModelDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         self.delete_button.clicked.connect(self._on_delete_clicked)
         self.choose_preview_button.clicked.connect(self._on_choose_preview)
+        self.regenerate_preview_button.clicked.connect(self._on_regenerate_preview)
         self.add_gcode_button.clicked.connect(self._on_add_gcode)
         self.remove_gcode_button.clicked.connect(self._on_remove_gcode)
 
@@ -148,6 +157,7 @@ class EditModelDialog(QDialog):
         self.preview_changed = False
         self.new_preview_source_path = None
         self.new_preview_filename = preview_name
+        self.generated_preview_pixmap = None
 
         pixmap = self._load_preview_pixmap()
         if pixmap:
@@ -264,6 +274,28 @@ class EditModelDialog(QDialog):
         self.new_preview_source_path = file_path
         self.new_preview_filename = os.path.basename(file_path)
         self.current_preview_name = self.new_preview_filename
+        self.generated_preview_pixmap = None
+        self._update_preview_label(pixmap)
+
+    def _on_regenerate_preview(self) -> None:
+        model_path = self._resolve_model_path()
+        if not model_path:
+            QMessageBox.warning(self, "Regenerate Preview", "Unable to locate the model file for this entry.")
+            return
+        try:
+            pixmap = render_stl_preview(model_path, QSize(640, 480), dark_theme=self._is_dark_theme())
+        except Exception as exc:
+            QMessageBox.warning(self, "Regenerate Preview", f"Failed to render preview:\n{exc}")
+            return
+        if not pixmap or pixmap.isNull():
+            QMessageBox.warning(self, "Regenerate Preview", "Preview rendering failed for this model.")
+            return
+        target_name = self.original_preview_name or "preview.png"
+        self.preview_changed = True
+        self.new_preview_source_path = None
+        self.new_preview_filename = target_name
+        self.current_preview_name = target_name
+        self.generated_preview_pixmap = pixmap
         self._update_preview_label(pixmap)
 
     def _on_add_gcode(self) -> None:
@@ -433,3 +465,23 @@ class EditModelDialog(QDialog):
             if not print_time and re.fullmatch(r"\d+h\d*m|\d+h|\d+m", token.lower()):
                 print_time = token.lower()
         return material, colour, print_time
+
+    def _resolve_model_path(self) -> str | None:
+        filename = (
+            self.metadata.get("model_file")
+            or self.metadata.get("stl_file")
+            or self.model_data.get("model_file")
+            or self.model_data.get("stl_file")
+        )
+        if not filename or not self.folder_path:
+            return None
+        candidate = os.path.join(self.folder_path, filename)
+        if os.path.exists(candidate):
+            return candidate
+        return None
+
+    def _is_dark_theme(self) -> bool:
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "dark_theme"):
+            return bool(getattr(parent, "dark_theme"))
+        return False

@@ -1,22 +1,22 @@
 # Project TODO
 
 ## Backlog
+- [ ] add support for alternate stl/3mf files
+- [x] add button in the edit dialogue to set preview image as regenerate model preview image
+- [x] PROBLEM: top bars text size reverses to small font after theme toggle
+
+## Completed
+- [x] update program to reflect v0.030
+- [x] v0.30 release notes
+- [x] add button in the edit dialogue to set preview image as regenerate model preview image
+- [x] make the app show a loading bar instead of not responding when loading large file
+- [x] save mode (microsd/local) in config json so it is used as the default in save location dropdown in the add model menu
+- [x] save the theme every time it is switched
+- [x] make sure "system volume information" doesnt show as a model
 - [x] remove "system volume information" as it is not a model
 - [x] add loading bars for everything so the window will not be "not responding"
 - [x] limit to 3 columns at max window size
 - [x] Build metadata edit dialog and persistence
-- [ ] update program to reflect v0.030
-- [ ] v0.30 release notes
-- [ ] add button to set preview image as regenerate model preview image 
-- [ ] remove windows smartscreen warning
-- [ ] PROBLEM: top bars text size reverses to small font after theme toggle
-v0.30 misc updates (for github copilot):
-- [x] make the app show a loading bar instead of not responding when loading large file
-- [x] save mode (microsd/local) in config json so it is used as the default in save location dropdown in the add model menu
-- [x] save the theme every time it is switched
-- [x] make sure "system volume information" doesnt show as a model lmao
-
-## Completed
 - [x] Make 3D model preview & interactive viewer work with 3MF files
 - [x] Add 3D preview display using popup window for selected model (3d view button)
 - [x] Load models from configuration and hydrate gallery cards
@@ -31,6 +31,13 @@ v0.30 misc updates (for github copilot):
 - [x] Package Windows release (PyInstaller bundle + Inno Setup installer)
 
 ## Release Notes
+### 0.30 (2025-11-03)
+
+- Added determinate loading overlays for gallery refreshes and the VisPy preview dialog so the window stays responsive during heavy work.
+- Expanded the Edit Model dialog with preview swapping, metadata validation, and full G-code management (add, remove, copy, delete).
+- Persisted theme selection and default storage mode immediately on change to keep import defaults in sync across sessions.
+- Improved 3MF preview generation by rendering multi-part models directly and falling back to embedded thumbnails when available.
+
 ### 0.20 Beta (2025-11-03)
 - Added 3MF support across gallery thumbnails and interactive viewer.
 - Upgraded STL viewer dialog to VisPy for responsive, GPU-accelerated interaction.

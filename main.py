@@ -32,7 +32,7 @@ from ui.new_model_dialog import NewModelDialog
 from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
 
-APP_VERSION = "0.20 Beta"
+APP_VERSION = "0.30"
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -985,6 +985,11 @@ class MainWindow(QMainWindow):
 
         self._update_all_tinted_icons()
 
+        try:
+            self._resize_top_buttons(initial=True)
+        except Exception:
+            pass
+
     def _load_ui_widget(self, relative_path: str, parent=None):
         path = os.path.join(self.app_dir, relative_path)
         if not os.path.exists(path):
@@ -1347,6 +1352,7 @@ class MainWindow(QMainWindow):
         original_preview_name = getattr(dialog, 'original_preview_name', '') or ''
 
         if preview_changed:
+            generated_preview = getattr(dialog, 'generated_preview_pixmap', None)
             if new_preview_source and new_preview_name:
                 dest_path = os.path.join(folder, new_preview_name)
                 try:
@@ -1354,6 +1360,21 @@ class MainWindow(QMainWindow):
                         shutil.copy2(new_preview_source, dest_path)
                 except Exception as exc:
                     QMessageBox.critical(self, 'Save Changes', f'Unable to copy preview image:\n{exc}')
+                    return
+                if original_preview_name and original_preview_name != new_preview_name:
+                    old_path = os.path.join(folder, original_preview_name)
+                    if os.path.isfile(old_path):
+                        try:
+                            os.remove(old_path)
+                        except Exception:
+                            pass
+            elif generated_preview is not None and not generated_preview.isNull() and new_preview_name:
+                dest_path = os.path.join(folder, new_preview_name)
+                try:
+                    if not generated_preview.save(dest_path, 'PNG'):
+                        raise IOError('Unable to write regenerated preview image.')
+                except Exception as exc:
+                    QMessageBox.critical(self, 'Save Changes', f'Unable to write preview image:\n{exc}')
                     return
                 if original_preview_name and original_preview_name != new_preview_name:
                     old_path = os.path.join(folder, original_preview_name)
