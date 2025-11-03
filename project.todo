@@ -1,13 +1,20 @@
 # Project TODO
 
 ## Backlog
-- [ ] add loading bars for everything so the window will not be "not responding"
-- [ ] Build metadata edit dialog and persistence
+- [x] remove "system volume information" as it is not a model
+- [x] add loading bars for everything so the window will not be "not responding"
+- [x] limit to 3 columns at max window size
+- [x] Build metadata edit dialog and persistence
 - [ ] update program to reflect v0.030
 - [ ] v0.30 release notes
+- [ ] add button to set preview image as regenerate model preview image 
 - [ ] remove windows smartscreen warning
+- [ ] PROBLEM: top bars text size reverses to small font after theme toggle
 v0.30 misc updates (for github copilot):
-make the app show a loading bar instead of not responding when loading large file, also save mode (microsd/local) in config json so it is used as the default in save location dropdown in the add model menu and also save the theme every time it is switched. make sure "system volume information doesnt show as a model lmao
+- [x] make the app show a loading bar instead of not responding when loading large file
+- [x] save mode (microsd/local) in config json so it is used as the default in save location dropdown in the add model menu
+- [x] save the theme every time it is switched
+- [x] make sure "system volume information" doesnt show as a model lmao
 
 ## Completed
 - [x] Make 3D model preview & interactive viewer work with 3MF files

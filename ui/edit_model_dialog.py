@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from copy import deepcopy
 from datetime import datetime
 
@@ -41,6 +42,8 @@ class EditModelDialog(QDialog):
         self.new_preview_source_path: str | None = None
         self.new_preview_filename: str = ""
         self._preview_pixmap: QPixmap | None = None
+        self.pending_gcode_copies: list[dict] = []
+        self.gcode_files_to_delete: list[str] = []
 
         self._load_metadata()
         self._build_ui()
@@ -101,6 +104,14 @@ class EditModelDialog(QDialog):
         )
         layout.addWidget(self.gcode_table)
 
+        gcode_controls = QHBoxLayout()
+        self.add_gcode_button = QPushButton("Add G-code…", self)
+        self.remove_gcode_button = QPushButton("Remove Selected", self)
+        gcode_controls.addWidget(self.add_gcode_button)
+        gcode_controls.addWidget(self.remove_gcode_button)
+        gcode_controls.addStretch(1)
+        layout.addLayout(gcode_controls)
+
         hint = QLabel(
             "Update metadata for each G-code entry. File names remain unchanged.",
             self,
@@ -121,6 +132,8 @@ class EditModelDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         self.delete_button.clicked.connect(self._on_delete_clicked)
         self.choose_preview_button.clicked.connect(self._on_choose_preview)
+        self.add_gcode_button.clicked.connect(self._on_add_gcode)
+        self.remove_gcode_button.clicked.connect(self._on_remove_gcode)
 
     def _populate_fields(self) -> None:
         name = self.metadata.get("name") or self.model_data.get("name") or ""
@@ -154,7 +167,15 @@ class EditModelDialog(QDialog):
 
             file_item = QTableWidgetItem(file_name)
             file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
-            file_item.setData(Qt.UserRole, file_name)
+            file_item.setToolTip(file_name)
+            file_item.setData(
+                Qt.UserRole,
+                {
+                    "file": file_name,
+                    "source_path": os.path.join(self.folder_path, file_name) if self.folder_path else "",
+                    "is_new": False,
+                },
+            )
             material_item = QTableWidgetItem(material)
             colour_item = QTableWidgetItem(colour)
             time_item = QTableWidgetItem(print_time)
@@ -172,7 +193,10 @@ class EditModelDialog(QDialog):
             file_item = self.gcode_table.item(row, 0)
             if file_item is None:
                 continue
-            file_name = file_item.data(Qt.UserRole) or file_item.text()
+            payload = file_item.data(Qt.UserRole) or {}
+            if isinstance(payload, str):
+                payload = {"file": payload, "source_path": "", "is_new": False}
+            file_name = payload.get("file") or file_item.text()
             material_item = self.gcode_table.item(row, 1)
             colour_item = self.gcode_table.item(row, 2)
             time_item = self.gcode_table.item(row, 3)
@@ -182,6 +206,8 @@ class EditModelDialog(QDialog):
                     "material": material_item.text().strip() if material_item else "",
                     "colour": colour_item.text().strip() if colour_item else "",
                     "print_time": time_item.text().strip() if time_item else "",
+                    "source_path": payload.get("source_path", "") if isinstance(payload, dict) else "",
+                    "is_new": bool(payload.get("is_new") if isinstance(payload, dict) else False),
                 }
             )
         return rows
@@ -240,6 +266,70 @@ class EditModelDialog(QDialog):
         self.current_preview_name = self.new_preview_filename
         self._update_preview_label(pixmap)
 
+    def _on_add_gcode(self) -> None:
+        start_dir = self.folder_path if self.folder_path else os.path.expanduser("~")
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select G-code Files",
+            start_dir,
+            "G-code Files (*.gcode *.gco *.g);;All Files (*)",
+        )
+        if not paths:
+            return
+        for path in paths:
+            if not os.path.isfile(path):
+                continue
+            basename = os.path.basename(path)
+            material, colour, print_time = self._parse_gcode_filename(basename)
+            row = self.gcode_table.rowCount()
+            self.gcode_table.insertRow(row)
+
+            file_item = QTableWidgetItem(basename)
+            file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
+            file_item.setToolTip(path)
+            file_item.setData(
+                Qt.UserRole,
+                {
+                    "file": basename,
+                    "source_path": path,
+                    "is_new": True,
+                },
+            )
+
+            material_item = QTableWidgetItem(material)
+            colour_item = QTableWidgetItem(colour)
+            time_item = QTableWidgetItem(print_time)
+
+            self.gcode_table.setItem(row, 0, file_item)
+            self.gcode_table.setItem(row, 1, material_item)
+            self.gcode_table.setItem(row, 2, colour_item)
+            self.gcode_table.setItem(row, 3, time_item)
+
+    def _on_remove_gcode(self) -> None:
+        row = self.gcode_table.currentRow()
+        if row < 0:
+            return
+        file_item = self.gcode_table.item(row, 0)
+        payload = file_item.data(Qt.UserRole) if file_item else {}
+        if isinstance(payload, dict) and not payload.get("is_new"):
+            file_name = payload.get("file") or file_item.text()
+            if file_name:
+                prompt = QMessageBox(self)
+                prompt.setWindowTitle("Remove G-code")
+                prompt.setIcon(QMessageBox.Question)
+                prompt.setText("Remove this G-code entry? Optionally delete the file from disk as well.")
+                delete_btn = prompt.addButton("Remove && Delete", QMessageBox.AcceptRole)
+                prompt.addButton("Remove Only", QMessageBox.DestructiveRole)
+                cancel_btn = prompt.addButton(QMessageBox.Cancel)
+                prompt.setDefaultButton(delete_btn)
+                prompt.exec()
+                clicked = prompt.clickedButton()
+                if clicked is cancel_btn:
+                    return
+                if clicked is delete_btn and file_name not in self.gcode_files_to_delete:
+                    self.gcode_files_to_delete.append(file_name)
+        self.gcode_table.removeRow(row)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._apply_preview_scaling()
@@ -253,7 +343,37 @@ class EditModelDialog(QDialog):
         metadata = deepcopy(self.metadata)
         metadata["name"] = name
         metadata["print_time"] = self.print_time_edit.text().strip()
-        metadata["gcodes"] = self._collect_gcode_rows()
+        collected = self._collect_gcode_rows()
+        if any(not row.get("file") and not row.get("source_path") for row in collected):
+            QMessageBox.warning(self, "Invalid Entry", "Each G-code row must reference a file.")
+            return
+
+        used_names: set[str] = set()
+        gcodes: list[dict] = []
+        pending_copies: list[dict] = []
+        for entry in collected:
+            base_name = entry.get("file") or os.path.basename(entry.get("source_path") or "")
+            if not base_name:
+                QMessageBox.warning(self, "Invalid Entry", "A G-code row has no filename.")
+                return
+            unique_name = self._ensure_unique_filename(base_name, used_names)
+            gcodes.append(
+                {
+                    "file": unique_name,
+                    "material": entry.get("material", ""),
+                    "colour": entry.get("colour", ""),
+                    "print_time": entry.get("print_time", ""),
+                }
+            )
+            if entry.get("is_new") and entry.get("source_path"):
+                pending_copies.append({
+                    "source": entry["source_path"],
+                    "dest": unique_name,
+                })
+        current_files = {entry["file"].lower() for entry in gcodes}
+        self.gcode_files_to_delete = [name for name in self.gcode_files_to_delete if name.lower() not in current_files]
+        metadata["gcodes"] = gcodes
+        self.pending_gcode_copies = pending_copies
         if self.preview_changed and self.new_preview_source_path:
             preview_name = self.new_preview_filename or os.path.basename(self.new_preview_source_path)
             metadata["preview_image"] = preview_name
@@ -283,3 +403,33 @@ class EditModelDialog(QDialog):
         self.delete_requested = True
         self.updated_metadata = None
         super().accept()
+
+    def _ensure_unique_filename(self, candidate: str, used_lower: set[str]) -> str:
+        root, ext = os.path.splitext(candidate)
+        attempt = candidate
+        suffix = 1
+        key = attempt.lower()
+        while key in used_lower:
+            attempt = f"{root}_{suffix}{ext}"
+            suffix += 1
+            key = attempt.lower()
+        used_lower.add(key)
+        return attempt
+
+    def _parse_gcode_filename(self, filename: str) -> tuple[str, str, str]:
+        base = os.path.splitext(filename)[0]
+        tokens = [tok for tok in re.split(r"[_\-]+", base) if tok]
+        material = ""
+        colour = ""
+        print_time = ""
+        for token in tokens:
+            upper = token.upper()
+            if not material and upper in {"PLA", "ABS", "PETG", "TPU", "ASA", "PC"}:
+                material = upper
+                continue
+            if not colour and upper in {"RED", "BLUE", "BLACK", "WHITE", "GREEN", "GREY", "GRAY", "YELLOW", "PURPLE", "ORANGE"}:
+                colour = token.capitalize()
+                continue
+            if not print_time and re.fullmatch(r"\d+h\d*m|\d+h|\d+m", token.lower()):
+                print_time = token.lower()
+        return material, colour, print_time

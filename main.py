@@ -5,6 +5,7 @@ import re
 import shutil
 from datetime import datetime
 from functools import partial
+from typing import Callable
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
 )
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, Qt, QSize, QEvent, QTimer
+from PySide6.QtCore import QFile, Qt, QSize, QEvent, QTimer, QEventLoop
 from PySide6.QtGui import QIcon, QFont, QPixmap
 
 from core.svg_rendering import tint_icon
@@ -458,17 +459,23 @@ class MainWindow(QMainWindow):
         self._icon_targets.append({'kind': 'action' if action else 'button', 'widget': widget, 'action': action, 'path': path})
         return path
 
-    def _load_models_data(self) -> list[dict]:
-        models = []
+    def _load_models_data(self, progress: Callable[[int, int, str], None] | None = None) -> list[dict]:
+        models: list[dict] = []
         root = self.models_root
         if not os.path.isdir(root):
             return models
-        for entry in sorted(os.listdir(root)):
+        entries = [
+            entry for entry in sorted(os.listdir(root))
+            if os.path.isdir(os.path.join(root, entry))
+            and entry.lower() != 'system volume information'
+        ]
+        total = len(entries) or 1
+        if progress:
+            progress(0, total, 'Scanning model folders…')
+        for index, entry in enumerate(entries, start=1):
             folder_path = os.path.join(root, entry)
-            if not os.path.isdir(folder_path):
-                continue
             meta_path = os.path.join(folder_path, 'model.json')
-            meta = {}
+            meta: dict = {}
             if os.path.exists(meta_path):
                 try:
                     with open(meta_path, 'r', encoding='utf-8') as fh:
@@ -483,7 +490,7 @@ class MainWindow(QMainWindow):
                 if os.path.exists(candidate):
                     preview_path = candidate
             gcodes = meta.get('gcodes') or []
-            materials = []
+            materials: list[str] = []
             display_time = ''
             for g in gcodes:
                 material = g.get('material')
@@ -492,7 +499,6 @@ class MainWindow(QMainWindow):
                 time_text = g.get('print_time')
                 if time_text and not display_time:
                     display_time = str(time_text)
-                colour = g.get('colour') or g.get('color')
             if not display_time:
                 display_time = str(meta.get('print_time', '')) if meta.get('print_time') is not None else ''
             materials = [m for m in materials if m]
@@ -521,6 +527,10 @@ class MainWindow(QMainWindow):
                 'stl_file': meta.get('stl_file') or model_file,
                 'model_file': model_file,
             })
+            if progress:
+                detail = model_name or entry
+                progress(index, total, f'Scanning model folders… ({detail})')
+                QApplication.processEvents(QEventLoop.AllEvents, 1)
         return models
 
     def _parse_iso_datetime(self, value) -> datetime | None:
@@ -624,7 +634,13 @@ class MainWindow(QMainWindow):
                 if widget is not None:
                     widget.deleteLater()
 
-    def _refresh_gallery(self, models: list[dict] | None = None):
+    def _refresh_gallery(
+        self,
+        models: list[dict] | None = None,
+        *,
+        progress: Callable[[int, int, str], None] | None = None,
+    progress_message: str = 'Building gallery...',
+    ):
         models = list(models) if models is not None else list(self._models)
         self._clear_gallery()
         if not getattr(self, 'gallery_layout', None):
@@ -644,10 +660,13 @@ class MainWindow(QMainWindow):
                 self._update_all_tinted_icons()
             except Exception:
                 pass
+            if progress:
+                progress(1, 1, progress_message)
             return
 
         visible = []
         theme_key = 'dark' if getattr(self, 'dark_theme', False) else 'light'
+        total = len(models)
         for model in models:
             card = QWidget()
             layout = QVBoxLayout(card)
@@ -726,6 +745,12 @@ class MainWindow(QMainWindow):
             self.cards.append(card)
             visible.append(model)
 
+            if progress:
+                detail = model.get('name') or os.path.basename(model.get('folder', '') or '')
+                message = f'{progress_message} ({detail})' if detail else progress_message
+                progress(len(visible), total, message)
+                QApplication.processEvents(QEventLoop.AllEvents, 1)
+
         self._visible_models = visible
 
         self.relayout_gallery()
@@ -774,9 +799,9 @@ class MainWindow(QMainWindow):
             pass
         self._current_material_filter = current
 
-    def _apply_model_filters(self):
+    def _apply_model_filters(self, progress: Callable[[int, int, str], None] | None = None):
         if not self._models:
-            self._refresh_gallery([])
+            self._refresh_gallery([], progress=progress, progress_message='Building gallery...')
             return
         filtered = list(self._models)
         term = (self._search_term or '').strip().lower()
@@ -790,7 +815,10 @@ class MainWindow(QMainWindow):
         if material and material.lower() != 'all materials':
             filtered = [model for model in filtered if material in model.get('materials', [])]
         sorted_models = self._sort_models(filtered)
-        self._refresh_gallery(sorted_models)
+        total = len(sorted_models) or 1
+        if progress:
+            progress(0, total, 'Building gallery...')
+        self._refresh_gallery(sorted_models, progress=progress, progress_message='Building gallery...')
 
     def _sort_models(self, models: list[dict]) -> list[dict]:
         index = self._current_sort_index or 0
@@ -902,6 +930,8 @@ class MainWindow(QMainWindow):
         # Toggle theme state and apply the corresponding QSS
         self.dark_theme = not getattr(self, 'dark_theme', False)
         self.apply_theme(self.dark_theme)
+        self.config['theme'] = 'dark' if self.dark_theme else 'light'
+        self._save_config()
 
     def apply_theme(self, dark: bool):
         """Load the QSS for the chosen theme (dark=True) or light (dark=False).
@@ -1043,19 +1073,49 @@ class MainWindow(QMainWindow):
         self.loading_overlay.setGeometry(central.rect())
 
     def _show_loading(self, message: str = 'Loading…'):  # pragma: no cover - UI behaviour
-        self._create_loading_overlay()
+        self._reset_loading_progress(0, message)
         if self.loading_overlay is None:
             return
-        if self.loading_label is not None:
-            self.loading_label.setText(message)
         self._update_loading_overlay_geometry()
         self.loading_overlay.raise_()
         self.loading_overlay.show()
-        QApplication.processEvents()
+        QApplication.processEvents(QEventLoop.AllEvents, 1)
 
     def _hide_loading(self):  # pragma: no cover - UI behaviour
         if self.loading_overlay is not None:
             self.loading_overlay.hide()
+
+    def _reset_loading_progress(self, total: int = 0, message: str | None = None) -> None:
+        self._create_loading_overlay()
+        if self.loading_progress is None:
+            return
+        if total > 0:
+            total = int(total)
+            self.loading_progress.setRange(0, total)
+            self.loading_progress.setValue(0)
+        else:
+            self.loading_progress.setRange(0, 0)
+            self.loading_progress.setValue(0)
+        if message is not None and self.loading_label is not None:
+            self.loading_label.setText(message)
+        QApplication.processEvents(QEventLoop.AllEvents, 1)
+
+    def _update_loading_progress(self, current: int, total: int, message: str | None = None) -> None:
+        self._create_loading_overlay()
+        if self.loading_progress is None:
+            return
+        total = max(int(total), 0)
+        current = max(int(current), 0)
+        if total > 0:
+            if self.loading_progress.maximum() != total or self.loading_progress.minimum() != 0:
+                self.loading_progress.setRange(0, total)
+            self.loading_progress.setValue(min(current, total))
+        else:
+            self.loading_progress.setRange(0, 0)
+            self.loading_progress.setValue(0)
+        if message is not None and self.loading_label is not None:
+            self.loading_label.setText(message)
+        QApplication.processEvents(QEventLoop.AllEvents, 1)
 
     def reload_files(self):
         self._show_loading('Refreshing models…')
@@ -1177,29 +1237,38 @@ class MainWindow(QMainWindow):
         result = getattr(dialog, 'result_data', {}) or {}
         location = (result.get('location') or '').lower()
         base_path = result.get('base_path')
+        if location in ('local', 'microsd'):
+            self.config['mode'] = location
         if base_path:
             if location == 'local':
                 self.config['local_path'] = base_path
             elif location == 'microsd':
                 self.config['microsd_path'] = base_path
         self.models_root = self._resolve_models_root()
+        self._save_config()
         self.reload_files()
 
     def view_model(self, model_data: dict):
         if not model_data:
             return
 
+        self._show_loading('Preparing 3D preview...')
         try:
             dialog = StlPreviewDialog(
                 model_data,
                 dark_theme=getattr(self, 'dark_theme', False),
                 parent=self,
+                ready_callback=self._hide_loading,
             )
         except Exception as exc:
+            self._hide_loading()
             QMessageBox.critical(self, '3D Preview', f'Unable to open preview:\n{exc}')
             return
 
-        dialog.exec()
+        try:
+            dialog.exec()
+        finally:
+            self._hide_loading()
 
     def edit_model(self, model_data: dict):
         if not model_data:
@@ -1243,6 +1312,35 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Save Changes', 'Model folder is unknown; cannot write metadata.')
             return
 
+        gcode_copies = list(getattr(dialog, 'pending_gcode_copies', []) or [])
+        gcode_deletions = list(getattr(dialog, 'gcode_files_to_delete', []) or [])
+        copied_gcode_paths: list[str] = []
+        if gcode_copies:
+            for entry in gcode_copies:
+                source = entry.get('source')
+                dest_name = entry.get('dest')
+                if not source or not dest_name:
+                    continue
+                dest_path = os.path.join(folder, dest_name)
+                try:
+                    copied = False
+                    if os.path.abspath(source) != os.path.abspath(dest_path):
+                        if os.path.exists(dest_path):
+                            raise FileExistsError(f'File already exists: {dest_name}')
+                        shutil.copy2(source, dest_path)
+                        copied = True
+                except Exception as exc:
+                    for copied in copied_gcode_paths:
+                        if os.path.isfile(copied):
+                            try:
+                                os.remove(copied)
+                            except Exception:
+                                pass
+                    QMessageBox.critical(self, 'Save Changes', f'Unable to copy G-code file:\n{exc}')
+                    return
+                if copied:
+                    copied_gcode_paths.append(dest_path)
+
         preview_changed = getattr(dialog, 'preview_changed', False)
         new_preview_source = getattr(dialog, 'new_preview_source_path', None)
         new_preview_name = getattr(dialog, 'new_preview_filename', '') or ''
@@ -1281,6 +1379,17 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Save Changes', f'Unable to write model metadata:\n{exc}')
             return
 
+        if gcode_deletions:
+            for filename in gcode_deletions:
+                if not filename:
+                    continue
+                target = os.path.join(folder, filename)
+                if os.path.isfile(target):
+                    try:
+                        os.remove(target)
+                    except Exception as exc:
+                        QMessageBox.warning(self, 'Save Changes', f'Unable to delete {filename}:\n{exc}')
+
         self.reload_files()
 
     def populate_gallery(self):
@@ -1313,9 +1422,10 @@ class MainWindow(QMainWindow):
             available_w = max(1, container.width())
             spacing = 6
 
-        # Choose a minimum card width and compute how many columns fit
+        # Choose a minimum card width (approx) and compute how many columns fit, but cap at three
         min_card_w = 240
         cols = max(1, int((available_w + spacing) / (min_card_w + spacing)))
+        cols = min(cols, 3)
 
         # Clear current layout placements (but keep widgets alive)
         try:

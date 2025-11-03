@@ -1,6 +1,5 @@
 {
-  "mode": "local",
-  "local_path": "D:\\",
-  "microsd_path": "",
+  "mode": "microsd",
+  "microsd_path": "D:\\",
   "theme": "dark"
 }

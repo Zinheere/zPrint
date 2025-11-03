@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from zipfile import ZipFile
 
 import matplotlib
 
@@ -36,21 +37,26 @@ def render_stl_preview(
 	interactive updates (valid range 0.3-1.0).
 	"""
 
+	target_size = _coerce_qsize(size)
+	background, face_color, edge_color = _palette(dark_theme)
+
 	if mesh is None:
 		if not mesh_path:
 			return None
 		mesh = _load_mesh(mesh_path)
+		if (mesh is None or mesh.is_empty) and str(mesh_path).lower().endswith(".3mf"):
+			embedded = _extract_3mf_thumbnail(mesh_path, target_size, background)
+			if embedded is not None:
+				return embedded
 	if mesh is None or mesh.is_empty:
 		return None
 
-	target_size = _coerce_qsize(size)
 	quality_scale = float(np.clip(quality_scale, 0.3, 1.0))
 	width = max(64, int(target_size.width() * quality_scale))
 	height = max(64, int(target_size.height() * quality_scale))
 	dpi = int(70 + 30 * quality_scale)
 
 	figure = Figure(figsize=(width / dpi, height / dpi), dpi=dpi)
-	background, face_color, edge_color = _palette(dark_theme)
 	figure.patch.set_facecolor(background)
 	canvas = FigureCanvas(figure)
 
@@ -83,29 +89,7 @@ def render_stl_preview(
 	pixmap = QPixmap.fromImage(qimage.copy())
 	if pixmap.isNull():
 		return None
-	if pixmap.size() != target_size:
-		scaled = pixmap.scaled(
-			target_size,
-			aspectMode=Qt.KeepAspectRatio,
-			mode=Qt.SmoothTransformation,
-		)
-		framed = QPixmap(target_size)
-		framed.fill(QColor(background))
-		painter = QPainter(framed)
-		offset_x = (target_size.width() - scaled.width()) // 2
-		offset_y = (target_size.height() - scaled.height()) // 2
-		painter.drawPixmap(offset_x, offset_y, scaled)
-		painter.end()
-		pixmap = framed
-	else:
-		# ensure background is opaque even if renderer left margins transparent
-		with_background = QPixmap(target_size)
-		with_background.fill(QColor(background))
-		painter = QPainter(with_background)
-		painter.drawPixmap(0, 0, pixmap)
-		painter.end()
-		pixmap = with_background
-	return pixmap
+	return _composite_pixmap(pixmap, target_size, background)
 
 
 def _load_mesh(mesh_path: str | Path) -> trimesh.Trimesh | None:
@@ -129,6 +113,67 @@ def _coerce_qsize(value: QSize | tuple[int, int]) -> QSize:
 		return value
 	width, height = value
 	return QSize(int(width), int(height))
+
+
+def _composite_pixmap(pixmap: QPixmap, target_size: QSize, background: str) -> QPixmap | None:
+	if pixmap.isNull():
+		return None
+	result = QPixmap(target_size)
+	result.fill(QColor(background))
+	scaled = pixmap.scaled(
+		target_size,
+		aspectMode=Qt.KeepAspectRatio,
+		mode=Qt.SmoothTransformation,
+	)
+	painter = QPainter(result)
+	offset_x = (target_size.width() - scaled.width()) // 2
+	offset_y = (target_size.height() - scaled.height()) // 2
+	painter.drawPixmap(offset_x, offset_y, scaled)
+	painter.end()
+	return result
+
+
+def _extract_3mf_thumbnail(mesh_path: str | Path, target_size: QSize, background: str) -> QPixmap | None:
+	try:
+		with ZipFile(mesh_path) as archive:
+			names = archive.namelist()
+			candidates = [
+				name for name in names
+				if name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))
+				and ("thumbnail" in name.lower() or "preview" in name.lower())
+			]
+			if not candidates:
+				return None
+
+			def _score(name: str) -> tuple[int, int]:
+				lower = name.lower()
+				primary = 0
+				if "thumbnail" in lower:
+					primary -= 100
+				if "preview" in lower:
+					primary -= 80
+				if lower.endswith(".png"):
+					primary -= 5
+				return (primary, lower.count('/'))
+
+			for candidate in sorted(candidates, key=_score):
+				try:
+					with archive.open(candidate) as fh:
+						data = fh.read()
+				except Exception:
+					continue
+				if not data:
+					continue
+				image = QImage.fromData(data)
+				if image.isNull():
+					continue
+				pixmap = QPixmap.fromImage(image)
+				if pixmap.isNull():
+					continue
+				return _composite_pixmap(pixmap, target_size, background)
+	except Exception:
+		return None
+	return None
 
 
 def _palette(dark: bool) -> tuple[str, tuple[float, float, float, float], tuple[float, float, float, float]]:

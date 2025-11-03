@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Optional, Callable
 
 import numpy as np
 import trimesh
@@ -172,12 +172,14 @@ class StlPreviewDialog(QDialog):
         *,
         dark_theme: bool = False,
         parent: Optional[QWidget] = None,
+        ready_callback: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
         self.setModal(True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self._model_data = model_data or {}
         self._dark_theme = bool(dark_theme)
+        self._ready_callback = ready_callback
 
         model_name = self._model_data.get("name") or "Model Preview"
         self.setWindowTitle(str(model_name))
@@ -213,6 +215,14 @@ class StlPreviewDialog(QDialog):
         layout.addWidget(self._preview_widget)
         layout.addWidget(self._build_info_label(model_path))
         layout.addLayout(self._build_controls_row())
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._ready_callback is not None:
+            try:
+                self._ready_callback()
+            finally:
+                self._ready_callback = None
 
     def _resolve_model_path(self) -> Optional[str]:
         folder = self._model_data.get("folder")
