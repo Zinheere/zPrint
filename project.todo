@@ -21,6 +21,7 @@
 - Config saved under `%APPDATA%\zPrint` with document-root fallback.
 - Import flow supports creating new model folders and updates gallery empty state.
 - Added Windows build pipeline: PyInstaller spec, release script, and Inno Setup installer.
+- Embedded official logo into executable, installer, and shortcuts.
 
 ### 0.10 Beta (initial drop)
 - Initial gallery experience with search, sort, and material filters.

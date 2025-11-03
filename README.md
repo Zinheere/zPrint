@@ -11,6 +11,7 @@
 - Added configurable import flow with folder creation and config persistence in `%APPDATA%\zPrint`.
 - Simplified empty gallery state and ensured document-root defaults target the user Documents directory.
 - Introduced PyInstaller/ Inno Setup packaging scripts for portable builds and Windows installers.
+- Embedded official logo into executable, installer, and shortcuts.
 
 ### 0.10 Beta (initial drop)
 

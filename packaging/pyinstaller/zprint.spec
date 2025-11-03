@@ -53,6 +53,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=os.path.join(PROJECT_ROOT, 'assets', 'icons', 'zprint.ico'),
 )
 
 coll = COLLECT(
