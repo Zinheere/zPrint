@@ -1,5 +1,7 @@
 import sys
 import os
+import json
+from functools import partial
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QSizePolicy
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QSize, QByteArray
@@ -15,8 +17,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         # theme state: False = light, True = dark
-        self.dark_theme = False
-        self._icons_dir = os.path.join(os.path.dirname(__file__), 'assets', 'icons')
+        self.app_dir = os.path.dirname(__file__)
+        self.config = self._load_config()
+        mode_theme = self.config.get('theme', 'light').lower()
+        self.dark_theme = mode_theme == 'dark'
+        self.models_root = self._resolve_models_root()
+        self._icons_dir = os.path.join(self.app_dir, 'assets', 'icons')
         # track widgets/actions that need tinted icons reapplied on theme/resize
         self._icon_targets = []  # entries: {'kind': 'button'|'action', 'widget': QWidget, 'action': QAction|None, 'path': str}
         self.load_ui()
@@ -391,6 +397,37 @@ class MainWindow(QMainWindow):
         except Exception:
             return QIcon()
 
+    def _load_config(self) -> dict:
+        defaults = {
+            'mode': 'local',
+            'local_path': os.path.join(self.app_dir, 'testfiles'),
+            'theme': 'light'
+        }
+        config_path = os.path.join(self.app_dir, 'testfiles', 'config.json')
+        try:
+            with open(config_path, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+                defaults.update(data)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+        return defaults
+
+    def _resolve_models_root(self) -> str:
+        mode = (self.config.get('mode') or 'local').lower()
+        path = None
+        if mode == 'microsd':
+            path = self.config.get('microsd_path') or self.config.get('local_path')
+        else:
+            path = self.config.get('local_path')
+        if not path:
+            path = os.path.join(self.app_dir, 'testfiles')
+        path = os.path.expandvars(os.path.expanduser(path))
+        if not os.path.isabs(path):
+            path = os.path.abspath(os.path.join(self.app_dir, path))
+        return path
+
     def _resolve_icon_path(self, candidates) -> str | None:
         if isinstance(candidates, str):
             candidates = (candidates,)
@@ -407,6 +444,124 @@ class MainWindow(QMainWindow):
         self._icon_targets = [t for t in self._icon_targets if not (t.get('widget') is widget and t.get('action') is action)]
         self._icon_targets.append({'kind': 'action' if action else 'button', 'widget': widget, 'action': action, 'path': path})
         return path
+
+    def _load_models_data(self) -> list[dict]:
+        models = []
+        root = self.models_root
+        if not os.path.isdir(root):
+            return models
+        for entry in sorted(os.listdir(root)):
+            folder_path = os.path.join(root, entry)
+            if not os.path.isdir(folder_path):
+                continue
+            meta_path = os.path.join(folder_path, 'model.json')
+            meta = {}
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, 'r', encoding='utf-8') as fh:
+                        meta = json.load(fh) or {}
+                except Exception:
+                    meta = {}
+            model_name = meta.get('name') or entry
+            preview_rel = meta.get('preview_image')
+            preview_path = None
+            if preview_rel:
+                candidate = os.path.join(folder_path, preview_rel)
+                if os.path.exists(candidate):
+                    preview_path = candidate
+            gcodes = meta.get('gcodes') or []
+            display_time = ''
+            for g in gcodes:
+                time_text = g.get('print_time')
+                if time_text:
+                    display_time = str(time_text)
+                    break
+            if not display_time:
+                display_time = str(meta.get('print_time', '')) if meta.get('print_time') is not None else ''
+            models.append({
+                'name': model_name,
+                'folder': folder_path,
+                'preview_path': preview_path,
+                'gcodes': gcodes,
+                'print_time': display_time,
+                'metadata': meta
+            })
+        return models
+
+    def _clear_gallery(self):
+        # Remove previous card widgets and associated icon registrations
+        if hasattr(self, 'cards') and self.cards:
+            for card in self.cards:
+                for btn in card.findChildren(QPushButton):
+                    self._icon_targets = [t for t in self._icon_targets if t.get('widget') is not btn]
+                card.deleteLater()
+        self.cards = []
+        self.card_headers = []
+        self.card_subtexts = []
+        if hasattr(self, 'gallery_layout') and self.gallery_layout is not None:
+            while self.gallery_layout.count():
+                item = self.gallery_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+
+    def _refresh_gallery(self):
+        data = self._load_models_data()
+        self._clear_gallery()
+        if not getattr(self, 'gallery_layout', None):
+            return
+
+        for model in data:
+            card = QWidget()
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(5, 5, 5, 5)
+
+            thumbnail = QLabel()
+            thumbnail.setAlignment(Qt.AlignCenter)
+            thumbnail.setProperty('thumbnail', True)
+            thumbnail.setScaledContents(True)
+            thumbnail.setMinimumSize(120, 120)
+            thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            preview_path = model.get('preview_path')
+            if preview_path:
+                pix = QPixmap(preview_path)
+                if not pix.isNull():
+                    thumbnail.setPixmap(pix)
+                else:
+                    thumbnail.setText('No Preview')
+            else:
+                thumbnail.setText('No Preview')
+            layout.addWidget(thumbnail)
+
+            name_label = QLabel(model.get('name', ''))
+            name_label.setProperty('cardHeader', True)
+            name_label.setStyleSheet('background: transparent;')
+            layout.addWidget(name_label)
+            self.card_headers.append(name_label)
+
+            time_text = model.get('print_time') or 'N/A'
+            time_label = QLabel(f"Print time: {time_text}")
+            time_label.setProperty('cardSub', True)
+            time_label.setStyleSheet('background: transparent;')
+            layout.addWidget(time_label)
+            self.card_subtexts.append(time_label)
+
+            btn_layout = QHBoxLayout()
+            btn_3d = QPushButton('3D View')
+            self._register_icon(btn_3d, ('3dview.svg', '3dviewbutton.svg'))
+            btn_3d.clicked.connect(partial(self.view_model, model))
+            btn_edit = QPushButton('Edit')
+            self._register_icon(btn_edit, ('editmodel.svg', 'editbutton.svg'))
+            btn_edit.clicked.connect(partial(self.edit_model, model))
+            btn_layout.addWidget(btn_3d)
+            btn_layout.addWidget(btn_edit)
+            layout.addLayout(btn_layout)
+
+            card.setProperty('card', True)
+            self.cards.append(card)
+
+        self.relayout_gallery()
+        self._update_all_tinted_icons()
 
     def _icon_color_for_theme(self) -> str:
         """Color for icons based on current theme: black on light, white on dark."""
@@ -509,8 +664,13 @@ class MainWindow(QMainWindow):
     def add_model(self):
         print("Add new model")
 
+    def view_model(self, model_data: dict):
+        print(f"Preview 3D model: {model_data.get('name')} from {model_data.get('folder')}")
+
+    def edit_model(self, model_data: dict):
+        print(f"Edit model metadata: {model_data.get('name')} from {model_data.get('folder')}")
+
     def populate_gallery(self):
-        # Example: Add 4 placeholder cards
         # find the scroll area contents widget and its layout that holds the gallery
         container = self.findChild(QWidget, 'scrollAreaWidgetContents')
         if container is None and self.ui is not None:
@@ -532,62 +692,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        # Only populate cards once
-        if not self.cards:
-            for i in range(4):
-                card = QWidget()
-                layout = QVBoxLayout(card)
-                layout.setContentsMargins(5, 5, 5, 5)
-
-                thumbnail = QLabel("Thumbnail")
-                # Allow the thumbnail to expand with the card and keep a minimum size
-                thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                thumbnail.setMinimumSize(80, 80)
-                thumbnail.setAlignment(Qt.AlignCenter)
-                # mark for QSS styling
-                thumbnail.setProperty('thumbnail', True)
-                # If you later set a pixmap, scaledContents=True will make it scale to the label
-                thumbnail.setScaledContents(True)
-                layout.addWidget(thumbnail)
-
-                name_label = QLabel(f"Model {i + 1}")
-                # mark as a card header and track for dynamic font resizing (bold, not blue)
-                name_label.setProperty('cardHeader', True)
-                # remove any boxed background so the text appears directly on the card
-                name_label.setStyleSheet('background: transparent;')
-                layout.addWidget(name_label)
-                # store reference for dynamic resizing
-                self.card_headers.append(name_label)
-                time_label = QLabel("Print time: 1h30m")
-                time_label.setProperty('cardSub', True)
-                # remove boxed background from the subtext as well
-                time_label.setStyleSheet('background: transparent;')
-                layout.addWidget(time_label)
-                # store reference for dynamic resizing
-                self.card_subtexts.append(time_label)
-
-                btn_layout = QHBoxLayout()
-                btn_3d = QPushButton("3D View")
-                btn_edit = QPushButton("Edit")
-                if self._register_icon(btn_3d, ('3dview.svg', '3dviewbutton.svg')):
-                    btn_3d.setIconSize(QSize(18, 18))
-                if self._register_icon(btn_edit, ('editmodel.svg', 'editbutton.svg')):
-                    btn_edit.setIconSize(QSize(18, 18))
-                btn_layout.addWidget(btn_3d)
-                btn_layout.addWidget(btn_edit)
-                layout.addLayout(btn_layout)
-                # mark the card widget for QSS
-                card.setProperty('card', True)
-
-                self.cards.append(card)
-
-        # Initial layout
-        self.relayout_gallery()
-        # apply current theme tinting for any newly registered icons
-        try:
-            self._update_all_tinted_icons()
-        except Exception:
-            pass
+        self._refresh_gallery()
 
     def relayout_gallery(self):
         """Compute number of columns based on available width and re-add cards to grid."""

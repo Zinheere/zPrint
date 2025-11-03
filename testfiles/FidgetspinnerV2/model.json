@@ -1,0 +1,10 @@
+{
+  "name": "Fidget spinner V2",
+  "stl_file": "Fidget Spinner v2.stl",
+  "gcodes": [
+    {"file": "Fidget_Spinner_v2_1h30m_eSUN_PLA+_White.gcode", "material": "eSun PLA+", "print_time": "1h30m"}
+  ],
+  "preview_image": "",
+  "last_modified": "2025-11-03T21:45:00",
+  "time_created": "2025-10-25T16:34:00"
+}
