@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.stl_preview import render_stl_preview
-from ui.new_model_dialog_ui import Ui_NewModelDialog
+from ui.generated.new_model_dialog_ui import Ui_NewModelDialog
 
 
 class NewModelDialog(QDialog):
@@ -66,8 +66,8 @@ class NewModelDialog(QDialog):
 
     def _wire_controls(self) -> None:
         if self.gcode_table is not None:
-            self.gcode_table.setColumnCount(3)
-            self.gcode_table.setHorizontalHeaderLabels(["File", "Material", "Print Time"])
+            self.gcode_table.setColumnCount(4)
+            self.gcode_table.setHorizontalHeaderLabels(["File", "Material", "Colour", "Print Time"])
             self.gcode_table.setSelectionBehavior(QAbstractItemView.SelectRows)
             self.gcode_table.setSelectionMode(QAbstractItemView.SingleSelection)
             self.gcode_table.setEditTriggers(
@@ -221,19 +221,30 @@ class NewModelDialog(QDialog):
         for path in paths:
             self._append_gcode_row(path)
 
-    def _append_gcode_row(self, path: str, material: str = "", print_time: str = "") -> None:
+    def _append_gcode_row(self, path: str, material: str = "", colour: str = "", print_time: str = "") -> None:
         if not self.gcode_table:
             return
+        parsed = self._parse_gcode_filename(path)
+        if parsed.get("name") and self.name_edit and not self.name_edit.text().strip():
+            self.name_edit.setText(parsed["name"])
+        if not material and parsed.get("material"):
+            material = parsed["material"]
+        if not colour and parsed.get("colour"):
+            colour = parsed["colour"]
+        if not print_time and parsed.get("print_time"):
+            print_time = parsed["print_time"]
         row = self.gcode_table.rowCount()
         self.gcode_table.insertRow(row)
         file_item = QTableWidgetItem(os.path.basename(path))
         file_item.setData(Qt.UserRole, path)
         file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
         material_item = QTableWidgetItem(material)
+        colour_item = QTableWidgetItem(colour)
         print_item = QTableWidgetItem(print_time)
         self.gcode_table.setItem(row, 0, file_item)
         self.gcode_table.setItem(row, 1, material_item)
-        self.gcode_table.setItem(row, 2, print_item)
+        self.gcode_table.setItem(row, 2, colour_item)
+        self.gcode_table.setItem(row, 3, print_item)
 
     def _on_remove_gcode(self) -> None:
         if not self.gcode_table:
@@ -252,12 +263,14 @@ class NewModelDialog(QDialog):
                 continue
             source_path = file_item.data(Qt.UserRole) or file_item.text()
             material_item = self.gcode_table.item(row, 1)
-            time_item = self.gcode_table.item(row, 2)
+            colour_item = self.gcode_table.item(row, 2)
+            time_item = self.gcode_table.item(row, 3)
             entries.append(
                 {
                     "source": source_path,
                     "file": file_item.text(),
                     "material": material_item.text() if material_item else "",
+                    "colour": colour_item.text() if colour_item else "",
                     "print_time": time_item.text() if time_item else "",
                 }
             )
@@ -334,6 +347,7 @@ class NewModelDialog(QDialog):
                     {
                         "file": os.path.basename(dest_file),
                         "material": entry.get("material") or "",
+                        "colour": entry.get("colour") or "",
                         "print_time": entry.get("print_time") or "",
                     }
                 )
@@ -375,4 +389,59 @@ class NewModelDialog(QDialog):
             "folder_path": model_dir,
             "location": data["location"],
             "base_path": dest_root,
+        }
+
+    def _parse_gcode_filename(self, path: str) -> dict:
+        base = os.path.splitext(os.path.basename(path))[0]
+        tokens = [tok for tok in base.split("_") if tok]
+        if not tokens:
+            return {"name": "", "material": "", "colour": "", "print_time": ""}
+
+        time_index = None
+        for idx, token in enumerate(tokens):
+            token_l = token.lower()
+            if re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?", token_l) and any(ch.isdigit() for ch in token_l):
+                time_index = idx
+                break
+        if time_index is None:
+            return {"name": "", "material": "", "colour": "", "print_time": ""}
+
+        name_tokens = tokens[:time_index]
+        time_token = tokens[time_index]
+        trailing = tokens[time_index + 1 :] if time_index + 1 < len(tokens) else []
+
+        def _clean(parts: list[str]) -> str:
+            text = " ".join(part.replace("-", " ") for part in parts)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text
+
+        name = _clean(name_tokens)
+        hours = minutes = ""
+        match = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?", time_token.lower())
+        if match:
+            hours = match.group(1) or ""
+            minutes = match.group(2) or ""
+        print_time = ""
+        if hours:
+            print_time += f"{hours}h"
+        if minutes:
+            print_time += f"{minutes}m"
+        if not print_time:
+            print_time = time_token
+
+        material_tokens: list[str] = []
+        colour = ""
+        if trailing:
+            if len(trailing) > 1:
+                colour = _clean([trailing[-1]])
+                material_tokens = trailing[:-1]
+            else:
+                material_tokens = trailing
+        material = _clean(material_tokens)
+
+        return {
+            "name": name,
+            "material": material,
+            "colour": colour,
+            "print_time": print_time,
         }

@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
         self.populate_gallery()
 
     def load_ui(self):
-        ui_path = os.path.join(self.app_dir, 'ui', 'main_window.ui')
+        ui_path = os.path.join(self.app_dir, 'ui', 'forms', 'main_window.ui')
         ui_file = QFile(ui_path)
         ui_file.open(QFile.ReadOnly)
         loader = QUiLoader()
@@ -489,6 +489,7 @@ class MainWindow(QMainWindow):
                 time_text = g.get('print_time')
                 if time_text and not display_time:
                     display_time = str(time_text)
+                colour = g.get('colour') or g.get('color')
             if not display_time:
                 display_time = str(meta.get('print_time', '')) if meta.get('print_time') is not None else ''
             materials = [m for m in materials if m]
@@ -499,6 +500,7 @@ class MainWindow(QMainWindow):
             for g in gcodes:
                 search_terms.append(g.get('file'))
                 search_terms.append(g.get('material'))
+                search_terms.append(g.get('colour') or g.get('color'))
             search_blob = ' '.join(str(term) for term in search_terms if term).lower()
             models.append({
                 'name': model_name,
@@ -982,7 +984,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        content = self._load_ui_widget(os.path.join('ui', 'loading_screen.ui'), overlay)
+        content = self._load_ui_widget(os.path.join('ui', 'forms', 'loading_screen.ui'), overlay)
         self.loading_label = None
         self.loading_progress = None
 
