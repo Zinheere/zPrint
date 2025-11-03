@@ -4,13 +4,113 @@ import json
 import re
 from datetime import datetime
 from functools import partial
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QSizePolicy
+
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QPushButton,
+    QLabel,
+    QVBoxLayout,
+    QHBoxLayout,
+    QSizePolicy,
+    QLayout,
+    QWidgetItem,
+    QLayoutItem,
+)
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, Qt, QSize
+from PySide6.QtCore import QFile, Qt, QSize, QRect
 from PySide6.QtGui import QIcon, QFont, QPixmap
 
 from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
+
+
+class MasonryLayout(QLayout):
+    """Simple masonry-style layout that packs child widgets into columns."""
+
+    def __init__(self, parent: QWidget | None = None, *, min_column_width: int = 240, spacing: int = 12) -> None:
+        super().__init__(parent)
+        self._items = []
+        self._min_column_width = max(80, min_column_width)
+        self.setSpacing(spacing)
+
+    def addItem(self, item: QLayoutItem) -> None:  # type: ignore[override]
+        self._items.append(item)
+
+    def addWidget(self, widget: QWidget) -> None:
+        self.addItem(QWidgetItem(widget))
+
+    def count(self) -> int:  # type: ignore[override]
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:  # type: ignore[override]
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:  # type: ignore[override]
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def sizeHint(self) -> QSize:  # type: ignore[override]
+        return self._aggregate_size()
+
+    def minimumSize(self) -> QSize:  # type: ignore[override]
+        return self._aggregate_size(minimum=True)
+
+    def _aggregate_size(self, minimum: bool = False) -> QSize:
+        width = self._min_column_width
+        height = 0
+        for item in self._items:
+            hint = item.minimumSize() if minimum else item.sizeHint()
+            width = max(width, hint.width())
+            height += hint.height() + self.spacing()
+        margins = self.contentsMargins()
+        width += margins.left() + margins.right()
+        height += margins.top() + margins.bottom()
+        return QSize(width, height)
+
+    def setGeometry(self, rect: QRect) -> None:  # type: ignore[override]
+        super().setGeometry(rect)
+        if not self._items:
+            return
+
+        margins = self.contentsMargins()
+        x0 = rect.x() + margins.left()
+        y0 = rect.y() + margins.top()
+        usable_width = max(1, rect.width() - margins.left() - margins.right())
+        spacing = self.spacing()
+        columns = max(1, int((usable_width + spacing) / (self._min_column_width + spacing)))
+        column_width = (usable_width - (columns - 1) * spacing) / columns
+
+        # Track cumulative column heights for masonry placement
+        column_heights = [y0 for _ in range(columns)]
+
+        for item in self._items:
+            # pick column with smallest current height
+            column_index = min(range(columns), key=lambda idx: column_heights[idx])
+            target_x = x0 + column_index * (column_width + spacing)
+            target_y = column_heights[column_index]
+
+            widget_width = int(column_width)
+            hint = item.sizeHint()
+            widget_height = hint.height()
+
+            widget = item.widget()
+            if widget is not None:
+                widget.setMinimumWidth(widget_width)
+                widget.setMaximumWidth(widget_width)
+            item.setGeometry(QRect(int(target_x), int(target_y), widget_width, widget_height))
+
+            column_heights[column_index] += widget_height + spacing
+
+        # Layout height is driven by parent scroll area; nothing further needed here.
+
+    def invalidate(self) -> None:  # type: ignore[override]
+        super().invalidate()
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -514,7 +614,7 @@ class MainWindow(QMainWindow):
             placeholder.setWordWrap(True)
             placeholder.setProperty('emptyState', True)
             self.cards = [placeholder]
-            self.gallery_layout.addWidget(placeholder, 0, 0)
+            self.gallery_layout.addWidget(placeholder)
             self._visible_models = []
             self.relayout_gallery()
             try:
@@ -533,9 +633,9 @@ class MainWindow(QMainWindow):
             thumbnail = QLabel()
             thumbnail.setAlignment(Qt.AlignCenter)
             thumbnail.setProperty('thumbnail', True)
-            thumbnail.setScaledContents(True)
-            thumbnail.setMinimumSize(120, 120)
-            thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            thumbnail.setScaledContents(False)
+            thumbnail.setMinimumHeight(120)
+            thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             thumbnail_pixmap = None
             preview_path = model.get('preview_path')
             if preview_path:
@@ -554,15 +654,21 @@ class MainWindow(QMainWindow):
                         if cached is not None and not cached.isNull():
                             thumbnail_pixmap = cached
                         else:
-                            generated = render_stl_preview(stl_path, QSize(256, 256), dark_theme=(theme_key == 'dark'))
+                            generated = render_stl_preview(stl_path, QSize(480, 360), dark_theme=(theme_key == 'dark'))
                             if generated and not generated.isNull():
                                 thumbnail_pixmap = generated
                                 self._preview_cache[cache_key] = generated
 
             if thumbnail_pixmap and not thumbnail_pixmap.isNull():
-                thumbnail.setPixmap(thumbnail_pixmap)
+                scaled = thumbnail_pixmap.scaled(256, 256, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                thumbnail.setPixmap(scaled)
+                stamped_h = scaled.height()
+                thumbnail.setMinimumHeight(stamped_h)
+                thumbnail.setMaximumHeight(stamped_h)
             else:
                 thumbnail.setText('No Preview')
+                thumbnail.setMinimumHeight(150)
+                thumbnail.setMaximumHeight(150)
             layout.addWidget(thumbnail)
 
             name_label = QLabel(model.get('name', ''))
@@ -592,6 +698,8 @@ class MainWindow(QMainWindow):
             layout.addLayout(btn_layout)
 
             card.setProperty('card', True)
+            card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+            self.gallery_layout.addWidget(card)
             self.cards.append(card)
             visible.append(model)
 
@@ -824,19 +932,22 @@ class MainWindow(QMainWindow):
 
         gallery_layout = container.layout() if container is not None else None
         if gallery_layout is None:
-            # nothing to attach to
             return
 
-        # Keep references for responsive relayout
+        if not isinstance(gallery_layout, MasonryLayout):
+            new_layout = MasonryLayout(container, min_column_width=260, spacing=12)
+            new_layout.setContentsMargins(6, 6, 6, 6)
+            while gallery_layout.count():
+                item = gallery_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.setParent(None)
+            gallery_layout.deleteLater()
+            container.setLayout(new_layout)
+            gallery_layout = new_layout
+
         self.gallery_container = container
         self.gallery_layout = gallery_layout
-        # Optionally tune spacing/margins for the grid
-        try:
-            self.gallery_layout.setHorizontalSpacing(8)
-            self.gallery_layout.setVerticalSpacing(8)
-            self.gallery_layout.setContentsMargins(6, 6, 6, 6)
-        except Exception:
-            pass
 
         self._models = self._load_models_data()
         self._populate_material_filters(self._models)
@@ -847,6 +958,11 @@ class MainWindow(QMainWindow):
         container = getattr(self, 'gallery_container', None)
         layout = getattr(self, 'gallery_layout', None)
         if container is None or layout is None or not self.cards:
+            return
+
+        if isinstance(layout, MasonryLayout):
+            layout.invalidate()
+            layout.activate()
             return
 
         # Determine available width inside the scroll area contents
