@@ -95,16 +95,27 @@ def render_stl_preview(
 def _load_mesh(mesh_path: str | Path) -> trimesh.Trimesh | None:
 	try:
 		loaded = trimesh.load_mesh(mesh_path, force="mesh", process=True)
-		if isinstance(loaded, (list, tuple)):
-			parts = [mesh for mesh in loaded if isinstance(mesh, trimesh.Trimesh)]
-			loaded = trimesh.util.concatenate(parts) if parts else None
-		if isinstance(loaded, trimesh.Scene):
-			geoms = [geom for geom in loaded.geometry.values() if isinstance(geom, trimesh.Trimesh)]
-			loaded = trimesh.util.concatenate(geoms) if geoms else None
-		if isinstance(loaded, trimesh.Trimesh):
-			return loaded
+	except ModuleNotFoundError as exc:
+		if exc.name != "scipy":
+			return None
+		loaded = None
 	except Exception:
-		return None
+		loaded = None
+
+	if loaded is None:
+		try:
+			loaded = trimesh.load_mesh(mesh_path, force="mesh", process=False)
+		except Exception:
+			return None
+
+	if isinstance(loaded, (list, tuple)):
+		parts = [mesh for mesh in loaded if isinstance(mesh, trimesh.Trimesh)]
+		loaded = trimesh.util.concatenate(parts) if parts else None
+	if isinstance(loaded, trimesh.Scene):
+		geoms = [geom for geom in loaded.geometry.values() if isinstance(geom, trimesh.Trimesh)]
+		loaded = trimesh.util.concatenate(geoms) if geoms else None
+	if isinstance(loaded, trimesh.Trimesh):
+		return loaded
 	return None
 
 

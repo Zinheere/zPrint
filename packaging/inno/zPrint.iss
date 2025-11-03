@@ -31,7 +31,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "..\..\dist\zPrint\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\assets\icons\zprint.ico"; DestDir: "{app}\assets\icons"; Flags: ignoreversion createallsubdirs
+Source: "..\..\assets\icons\zprint.ico"; DestDir: "{app}\assets\icons"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icons\zprint.ico"; IconIndex: 0

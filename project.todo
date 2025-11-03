@@ -1,8 +1,13 @@
 # Project TODO
 
 0.50 main features:
-- [ ] autocreate models using unsorted gcode and model files
+- [ ] autocreate models using unsorted gcode and model files (under "import button")
 - [ ] add support for alternate stl/3mf files
+- [ ] add view gcode button in the 3d preview popup, gcode 3d view
+- top conventional menu bar (windows text only kind):
+ settings page (change storage location; which moves files to a different location)
+ about page 
+
 
 0.40 main features:
 more file management improvments
