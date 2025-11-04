@@ -57,6 +57,8 @@ class MainWindow(QMainWindow):
         self.load_ui()
         # apply the chosen theme immediately on startup
         self.apply_theme(self.dark_theme)
+        # ensure the window opens at a comfortable working size
+        self.resize(1280, 900)
         # tracked card header labels for dynamic font resizing
         self.card_headers = []
         self.card_subtexts = []

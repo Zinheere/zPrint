@@ -3,6 +3,7 @@
 0.50 main features:
 - [ ] autocreate models using unsorted gcode and model files (under "import button")
 - [ ] add support for alternate stl/3mf files
+- [ ] add an eject sd card if files are stored in sd
 - [ ] add view gcode button in the 3d preview popup, gcode 3d view
 - top conventional menu bar (windows text only kind):
  settings page (change storage location; which moves files to a different location)
