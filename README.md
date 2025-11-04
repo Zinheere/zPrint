@@ -13,7 +13,7 @@
 
 ### First Launch
 
-1. Install via `zPrint-Setup.exe` (or extract `dist\zPrint\` for a portable copy).
+1. Install via `zPrint-Setup.exe` from [releases](https://github.com/Zinheere/zPrint/releases).
 2. Start zPrint; the welcome prompts guide you through selecting a storage location and default theme. The app creates a `models.json` library and folders if needed.
 3. You can update both choices later from the gear menu in the main window.
 
