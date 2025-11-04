@@ -6,7 +6,8 @@
 
 ## Installer
 
-- ✅ The signed Windows installer is ready at [releases](https://github.com/Zinheere/zPrint/releases). Run it to install zPrint with shortcuts and file associations.
+### ✅ DOWNLOAD INSTALLER FROM [RELEASES](https://github.com/Zinheere/zPrint/releases/latest)
+- Run it to install zPrint with shortcuts and file associations.
 - Prefer a portable build? Use the self-contained folder in `dist\zPrint\`.
 
 ## Using zPrint
