@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -35,7 +37,6 @@ class NewModelDialog(QDialog):
         self._preview_pixmap: Optional[QPixmap] = None
         self._preview_source_path: Optional[str] = None
         self._preview_generated = False
-        self._stl_source_path: Optional[str] = None
 
         self._setup_ui()
         self._wire_controls()
@@ -47,10 +48,11 @@ class NewModelDialog(QDialog):
         self.setModal(True)
 
         self.name_edit: QLineEdit = self.ui.lineEditName
-        self.stl_edit: QLineEdit = self.ui.lineEditStlPath
+        self.stl_list: QListWidget = self.ui.listWidgetStlFiles
         self.preview_label: QLabel = self.ui.previewLabel
         self.choose_preview_btn: QPushButton = self.ui.btnChoosePreview
-        self.browse_stl_btn: QPushButton = self.ui.btnBrowseStl
+        self.add_stl_btn: QPushButton = self.ui.btnAddStl
+        self.remove_stl_btn: QPushButton = self.ui.btnRemoveStl
         self.add_gcode_btn: QPushButton = self.ui.btnAddGcode
         self.remove_gcode_btn: QPushButton = self.ui.btnRemoveGcode
         self.location_combo: QComboBox = self.ui.comboLocation
@@ -72,6 +74,13 @@ class NewModelDialog(QDialog):
             self.resize(640, 600)
 
     def _wire_controls(self) -> None:
+        if self.stl_list is not None:
+            self.stl_list.setSelectionMode(QAbstractItemView.SingleSelection)
+            self.stl_list.currentItemChanged.connect(self._on_model_selection_changed)
+
+        if self.remove_stl_btn is not None:
+            self.remove_stl_btn.setEnabled(False)
+
         if self.gcode_table is not None:
             self.gcode_table.setColumnCount(4)
             self.gcode_table.setHorizontalHeaderLabels(["File", "Material", "Colour", "Print Time"])
@@ -86,8 +95,10 @@ class NewModelDialog(QDialog):
             if header is not None:
                 header.setStretchLastSection(True)
 
-        if self.browse_stl_btn is not None:
-            self.browse_stl_btn.clicked.connect(self._on_browse_stl)
+        if self.add_stl_btn is not None:
+            self.add_stl_btn.clicked.connect(self._on_add_model_files)
+        if self.remove_stl_btn is not None:
+            self.remove_stl_btn.clicked.connect(self._on_remove_model_file)
         if self.choose_preview_btn is not None:
             self.choose_preview_btn.clicked.connect(self._on_choose_preview)
         if self.add_gcode_btn is not None:
@@ -121,21 +132,102 @@ class NewModelDialog(QDialog):
         if directory and self.destination_edit is not None:
             self.destination_edit.setText(directory)
 
-    def _on_browse_stl(self) -> None:
-        start_dir = os.path.dirname(self.stl_edit.text()) if self.stl_edit and self.stl_edit.text() else self._resolve_default_destination()
-        file_path, _ = QFileDialog.getOpenFileName(
+    def _on_add_model_files(self) -> None:
+        start_dir = self._resolve_default_destination()
+        existing = self._collect_model_files()
+        if existing:
+            start_dir = os.path.dirname(existing[-1]) or start_dir
+        paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select Model File",
+            "Select Model Files",
             start_dir,
             "3D Models (*.stl *.STL *.3mf *.3MF);;All Files (*)",
         )
-        if file_path and self.stl_edit is not None:
-            self.stl_edit.setText(file_path)
-            self._stl_source_path = file_path
-            self._generate_preview_from_stl(file_path)
-            if self.name_edit and not self.name_edit.text().strip():
-                suggested = os.path.splitext(os.path.basename(file_path))[0]
-                self.name_edit.setText(suggested)
+        if not paths:
+            return
+        self._add_model_paths(paths)
+
+    def _add_model_paths(self, paths: List[str]) -> None:
+        if not self.stl_list:
+            return
+        existing_names = {
+            os.path.basename(self.stl_list.item(index).data(Qt.UserRole)).lower()
+            for index in range(self.stl_list.count())
+            if self.stl_list.item(index) and self.stl_list.item(index).data(Qt.UserRole)
+        }
+        added_any = False
+        for path in paths:
+            if not os.path.isfile(path):
+                continue
+            base_name = os.path.basename(path)
+            key_name = base_name.lower()
+            if key_name in existing_names:
+                QMessageBox.warning(
+                    self,
+                    "Duplicate File",
+                    f"A model file named '{base_name}' is already in this model package. Remove it first if you need to replace it.",
+                )
+                continue
+            item = QListWidgetItem(base_name)
+            item.setData(Qt.UserRole, path)
+            self.stl_list.addItem(item)
+            added_any = True
+            existing_names.add(key_name)
+        if not added_any:
+            return
+
+        if self.name_edit and not self.name_edit.text().strip():
+            self._suggest_name_from_model()
+
+        if self.stl_list.count() == 1 and self.stl_list.item(0):
+            first_path = self.stl_list.item(0).data(Qt.UserRole)
+            if first_path:
+                self._generate_preview_from_stl(first_path)
+
+        if self.stl_list.currentRow() < 0 and self.stl_list.count() > 0:
+            self.stl_list.setCurrentRow(0)
+
+        self._update_model_controls()
+
+    def _suggest_name_from_model(self) -> None:
+        if not self.stl_list or self.stl_list.count() == 0:
+            return
+        item = self.stl_list.item(0)
+        if not item:
+            return
+        source = item.data(Qt.UserRole)
+        if not source:
+            return
+        suggested = os.path.splitext(os.path.basename(source))[0]
+        self.name_edit.setText(suggested)
+
+    def _on_remove_model_file(self) -> None:
+        if not self.stl_list:
+            return
+        row = self.stl_list.currentRow()
+        if row < 0:
+            return
+        self.stl_list.takeItem(row)
+        if self.stl_list.count():
+            new_row = min(row, self.stl_list.count() - 1)
+            self.stl_list.setCurrentRow(new_row)
+        self._update_model_controls()
+
+    def _on_model_selection_changed(self, current: Optional[QListWidgetItem], _: Optional[QListWidgetItem]) -> None:
+        self._update_model_controls()
+        if not current:
+            return
+        path = current.data(Qt.UserRole)
+        if not path:
+            return
+        if self._preview_source_path:
+            return
+        self._generate_preview_from_stl(path)
+
+    def _update_model_controls(self) -> None:
+        if self.remove_stl_btn is not None:
+            has_selection = bool(self.stl_list and self.stl_list.currentRow() >= 0)
+            self.remove_stl_btn.setEnabled(has_selection)
 
     def _generate_preview_from_stl(self, file_path: str) -> None:
         try:
@@ -263,15 +355,29 @@ class NewModelDialog(QDialog):
         self.result_data = package
         self.accept()
 
+    def _collect_model_files(self) -> List[str]:
+        if not self.stl_list:
+            return []
+        paths: List[str] = []
+        for index in range(self.stl_list.count()):
+            item = self.stl_list.item(index)
+            if not item:
+                continue
+            path = item.data(Qt.UserRole)
+            if path:
+                paths.append(path)
+        return paths
+
     def _gather_inputs(self) -> dict:
         name = self.name_edit.text().strip() if self.name_edit else ""
         if not name:
             raise ValueError("Model name is required.")
-        stl_path = self.stl_edit.text().strip() if self.stl_edit else ""
-        if not stl_path:
-            raise ValueError("Select an STL or 3MF file.")
-        if not os.path.isfile(stl_path):
-            raise ValueError("The selected model file no longer exists.")
+        model_paths = self._collect_model_files()
+        if not model_paths:
+            raise ValueError("Select at least one STL or 3MF file.")
+        missing = [path for path in model_paths if not os.path.isfile(path)]
+        if missing:
+            raise ValueError("Some selected model files no longer exist. Remove them and try again.")
         destination_root = self.destination_edit.text().strip() if self.destination_edit else ""
         if not destination_root:
             destination_root = self._resolve_default_destination()
@@ -279,7 +385,7 @@ class NewModelDialog(QDialog):
 
         return {
             "name": name,
-            "model_path": stl_path,
+            "model_paths": model_paths,
             "gcodes": gcode_entries,
             "destination_root": destination_root,
         }
@@ -301,9 +407,18 @@ class NewModelDialog(QDialog):
         os.makedirs(model_dir, exist_ok=False)
         created_paths = []
         try:
-            model_dest = os.path.join(model_dir, os.path.basename(data["model_path"]))
-            shutil.copy2(data["model_path"], model_dest)
-            created_paths.append(model_dest)
+            model_files = []
+            for index, source_path in enumerate(data["model_paths"]):
+                base_name = os.path.basename(source_path)
+                dest_name = base_name
+                dest_path = os.path.join(model_dir, dest_name)
+                if os.path.exists(dest_path):
+                    raise FileExistsError(
+                        f"A file named '{base_name}' already exists in the new model folder."
+                    )
+                shutil.copy2(source_path, dest_path)
+                created_paths.append(dest_path)
+                model_files.append(dest_name)
 
             gcodes_meta = []
             for entry in data["gcodes"]:
@@ -338,11 +453,12 @@ class NewModelDialog(QDialog):
                     created_paths.append(preview_dest)
 
             timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-            model_filename = os.path.basename(model_dest)
+            primary_model = model_files[0] if model_files else ""
             meta = {
                 "name": data["name"],
-                "stl_file": model_filename,
-                "model_file": model_filename,
+                "stl_file": primary_model,
+                "model_file": primary_model,
+                "model_files": model_files,
                 "gcodes": gcodes_meta,
                 "preview_image": preview_name,
                 "last_modified": timestamp,

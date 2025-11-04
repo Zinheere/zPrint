@@ -844,8 +844,15 @@ class MainWindow(QMainWindow):
             last_modified_dt = self._parse_iso_datetime(meta.get('last_modified'))
             time_created_dt = self._parse_iso_datetime(meta.get('time_created'))
             print_minutes = self._parse_print_time_to_minutes(display_time)
-            model_file = meta.get('model_file') or meta.get('stl_file')
-            search_terms = [model_name, entry, model_file, display_time]
+            model_files_value = meta.get('model_files')
+            if isinstance(model_files_value, list) and model_files_value:
+                model_files = [str(item) for item in model_files_value if item]
+            else:
+                fallback = meta.get('model_file') or meta.get('stl_file')
+                model_files = [str(fallback)] if fallback else []
+            primary_model_file = model_files[0] if model_files else ''
+            search_terms = [model_name, entry, primary_model_file, display_time]
+            search_terms.extend(model_files)
             for g in gcodes:
                 search_terms.append(g.get('file'))
                 search_terms.append(g.get('material'))
@@ -872,8 +879,9 @@ class MainWindow(QMainWindow):
                 'time_created_dt': time_created_dt,
                 'print_time_minutes': print_minutes,
                 'search_blob': search_blob,
-                'stl_file': meta.get('stl_file') or model_file,
-                'model_file': model_file,
+                'stl_file': meta.get('stl_file') or primary_model_file,
+                'model_file': primary_model_file,
+                'model_files': model_files,
                 'active': is_active,
                 'active_gcode_files': active_files,
             })
@@ -1038,20 +1046,28 @@ class MainWindow(QMainWindow):
                     thumbnail_pixmap = pix
 
             if thumbnail_pixmap is None:
-                model_filename = model.get('model_file') or model.get('stl_file')
                 folder = model.get('folder')
-                if folder and model_filename:
-                    stl_path = os.path.join(folder, model_filename)
-                    if os.path.exists(stl_path):
-                        cache_key = (os.path.abspath(stl_path), theme_key)
-                        cached = self._preview_cache.get(cache_key)
-                        if cached is not None and not cached.isNull():
-                            thumbnail_pixmap = cached
-                        else:
-                            generated = render_stl_preview(stl_path, QSize(720, 720), dark_theme=(theme_key == 'dark'))
-                            if generated and not generated.isNull():
-                                thumbnail_pixmap = generated
-                                self._preview_cache[cache_key] = generated
+                model_candidates = list(model.get('model_files') or [])
+                fallback_name = model.get('model_file') or model.get('stl_file')
+                if fallback_name and fallback_name not in model_candidates:
+                    model_candidates.append(fallback_name)
+                stl_path = None
+                if folder:
+                    for candidate_name in model_candidates:
+                        candidate_path = os.path.join(folder, candidate_name)
+                        if os.path.exists(candidate_path):
+                            stl_path = candidate_path
+                            break
+                if stl_path:
+                    cache_key = (os.path.abspath(stl_path), theme_key)
+                    cached = self._preview_cache.get(cache_key)
+                    if cached is not None and not cached.isNull():
+                        thumbnail_pixmap = cached
+                    else:
+                        generated = render_stl_preview(stl_path, QSize(720, 720), dark_theme=(theme_key == 'dark'))
+                        if generated and not generated.isNull():
+                            thumbnail_pixmap = generated
+                            self._preview_cache[cache_key] = generated
 
             if thumbnail_pixmap and not thumbnail_pixmap.isNull():
                 if thumbnail not in self._thumbnail_sources:
@@ -1741,8 +1757,38 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Save Changes', 'Model folder is unknown; cannot write metadata.')
             return
 
+        model_copies = list(getattr(dialog, 'pending_model_copies', []) or [])
+        model_deletions = list(getattr(dialog, 'model_files_to_delete', []) or [])
         gcode_copies = list(getattr(dialog, 'pending_gcode_copies', []) or [])
         gcode_deletions = list(getattr(dialog, 'gcode_files_to_delete', []) or [])
+
+        copied_model_paths: list[str] = []
+        if model_copies:
+            for entry in model_copies:
+                source = entry.get('source')
+                dest_name = entry.get('dest')
+                if not source or not dest_name:
+                    continue
+                dest_path = os.path.join(folder, dest_name)
+                try:
+                    copied = False
+                    if os.path.abspath(source) != os.path.abspath(dest_path):
+                        if os.path.exists(dest_path):
+                            raise FileExistsError(f'Model file already exists: {dest_name}')
+                        shutil.copy2(source, dest_path)
+                        copied = True
+                except Exception as exc:
+                    for copied_path in copied_model_paths:
+                        if os.path.isfile(copied_path):
+                            try:
+                                os.remove(copied_path)
+                            except Exception:
+                                pass
+                    QMessageBox.critical(self, 'Save Changes', f'Unable to copy model file:\n{exc}')
+                    return
+                if copied:
+                    copied_model_paths.append(dest_path)
+
         copied_gcode_paths: list[str] = []
         if gcode_copies:
             for entry in gcode_copies:
@@ -1763,6 +1809,12 @@ class MainWindow(QMainWindow):
                         if os.path.isfile(copied):
                             try:
                                 os.remove(copied)
+                            except Exception:
+                                pass
+                    for copied_path in copied_model_paths:
+                        if os.path.isfile(copied_path):
+                            try:
+                                os.remove(copied_path)
                             except Exception:
                                 pass
                     QMessageBox.critical(self, 'Save Changes', f'Unable to copy G-code file:\n{exc}')
@@ -1824,6 +1876,17 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Save Changes', f'Unable to write model metadata:\n{exc}')
             return
 
+        if model_deletions:
+            for filename in model_deletions:
+                if not filename:
+                    continue
+                target = os.path.join(folder, filename)
+                if os.path.isfile(target):
+                    try:
+                        os.remove(target)
+                    except Exception as exc:
+                        QMessageBox.warning(self, 'Save Changes', f'Unable to delete {filename}:\n{exc}')
+
         if gcode_deletions:
             for filename in gcode_deletions:
                 if not filename:
@@ -1869,7 +1932,7 @@ class MainWindow(QMainWindow):
 
         # Choose a minimum card width (approx) and compute how many columns fit, but cap at three
         min_card_w = 240
-        cols = max(1, int((available_w + spacing) / (min_card_w + spacing)))
+        cols = max(2, int((available_w + spacing) / (min_card_w + spacing)))
         cols = min(cols, 3)
 
         # Clear current layout placements (but keep widgets alive)

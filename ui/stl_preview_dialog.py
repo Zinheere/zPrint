@@ -9,6 +9,7 @@ import numpy as np
 import trimesh
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -192,29 +193,31 @@ class StlPreviewDialog(QDialog):
             layout.addLayout(self._build_close_row())
             return
 
-        model_path = self._resolve_model_path()
-        if not model_path:
+        self._model_files = self._collect_model_filenames()
+        if not self._model_files:
             layout.addWidget(self._build_error_label("This model does not reference a 3D model file."))
             layout.addLayout(self._build_close_row())
             return
 
-        try:
-            mesh = self._load_mesh(model_path)
-        except Exception as exc:
-            layout.addWidget(self._build_error_label(f"Unable to load mesh:\n{exc}"))
-            layout.addLayout(self._build_close_row())
-            return
+        self._file_selector: QComboBox | None = None
+        if len(self._model_files) > 1:
+            layout.addLayout(self._build_file_selector_row())
 
-        try:
-            self._preview_widget = _InteractivePreview(mesh, dark_theme=self._dark_theme, parent=self)
-        except Exception as exc:  # pragma: no cover - defensive guard
-            layout.addWidget(self._build_error_label(f"Failed to initialise viewer:\n{exc}"))
-            layout.addLayout(self._build_close_row())
-            return
+        self._viewer_container = QWidget(self)
+        self._viewer_layout = QVBoxLayout(self._viewer_container)
+        self._viewer_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._viewer_container)
 
-        layout.addWidget(self._preview_widget)
-        layout.addWidget(self._build_info_label(model_path))
+        self._info_label = self._build_info_label("")
+        layout.addWidget(self._info_label)
+
         layout.addLayout(self._build_controls_row())
+
+        self._preview_widget: Optional[_InteractivePreview] = None
+        self._current_filename: Optional[str] = None
+
+        self._update_controls_enabled(False)
+        self._load_and_display_model(self._model_files[0])
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -224,9 +227,13 @@ class StlPreviewDialog(QDialog):
             finally:
                 self._ready_callback = None
 
-    def _resolve_model_path(self) -> Optional[str]:
+    def _resolve_model_path(self, filename: Optional[str] = None) -> Optional[str]:
         folder = self._model_data.get("folder")
-        filename = self._model_data.get("model_file") or self._model_data.get("stl_file")
+        if filename is None:
+            if hasattr(self, "_model_files") and self._model_files:
+                filename = self._model_files[0]
+            else:
+                filename = self._model_data.get("model_file") or self._model_data.get("stl_file")
         if not folder or not filename:
             return None
         candidate = os.path.join(folder, filename)
@@ -254,15 +261,8 @@ class StlPreviewDialog(QDialog):
         label.setWordWrap(True)
         return label
 
-    def _build_info_label(self, stl_path: str) -> QLabel:
-        folder = self._model_data.get("folder") or ""
-        print_time = self._model_data.get("print_time") or ""
-        parts = [f"Source: {os.path.basename(stl_path)}"]
-        if folder:
-            parts.append(f"Folder: {os.path.basename(folder)}")
-        if print_time:
-            parts.append(f"Print time: {print_time}")
-        label = QLabel(" | ".join(parts), self)
+    def _build_info_label(self, stl_path: Optional[str]) -> QLabel:
+        label = QLabel(self._format_info_text(stl_path), self)
         label.setAlignment(Qt.AlignCenter)
         label.setWordWrap(True)
         label.setObjectName("previewDetails")
@@ -273,9 +273,9 @@ class StlPreviewDialog(QDialog):
         controls.setContentsMargins(0, 12, 0, 0)
         controls.addStretch(1)
 
-        reset_btn = QPushButton("Reset View", self)
-        reset_btn.clicked.connect(self._preview_widget.reset_view)
-        controls.addWidget(reset_btn)
+        self._reset_button = QPushButton("Reset View", self)
+        self._reset_button.clicked.connect(self._on_reset_view)
+        controls.addWidget(self._reset_button)
 
         close_btn = QPushButton("Close", self)
         close_btn.clicked.connect(self.accept)
@@ -291,3 +291,104 @@ class StlPreviewDialog(QDialog):
         controls.addWidget(close_btn)
         controls.addStretch(1)
         return controls
+
+    def _collect_model_filenames(self) -> list[str]:
+        files = self._model_data.get("model_files")
+        if isinstance(files, (list, tuple)):
+            collected = [str(name) for name in files if name]
+            if collected:
+                return collected
+        fallback = self._model_data.get("model_file") or self._model_data.get("stl_file")
+        return [str(fallback)] if fallback else []
+
+    def _build_file_selector_row(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 12)
+        label = QLabel("Model File:", self)
+        row.addWidget(label)
+
+        selector = QComboBox(self)
+        for name in self._model_files:
+            selector.addItem(name)
+        selector.currentIndexChanged.connect(self._on_model_file_changed)
+        row.addWidget(selector, 1)
+        row.addStretch(1)
+        self._file_selector = selector
+        return row
+
+    def _on_model_file_changed(self, index: int) -> None:
+        if index < 0 or index >= len(self._model_files):
+            return
+        filename = self._model_files[index]
+        if filename == self._current_filename:
+            return
+        self._load_and_display_model(filename)
+
+    def _load_and_display_model(self, filename: str) -> None:
+        path = self._resolve_model_path(filename)
+        if not path:
+            self._show_error(f"Model file not found: {filename}")
+            return
+        try:
+            mesh = self._load_mesh(path)
+        except Exception as exc:
+            self._show_error(f"Unable to load mesh:\n{exc}")
+            return
+        try:
+            widget = _InteractivePreview(mesh, dark_theme=self._dark_theme, parent=self)
+        except Exception as exc:
+            self._show_error(f"Failed to initialise viewer:\n{exc}")
+            return
+        self._current_filename = filename
+        self._set_viewer_widget(widget)
+        self._update_info_label(path)
+
+    def _set_viewer_widget(self, widget: _InteractivePreview) -> None:
+        self._clear_viewer_container()
+        self._preview_widget = widget
+        self._viewer_layout.addWidget(widget)
+        self._update_controls_enabled(True)
+
+    def _clear_viewer_container(self) -> None:
+        if not hasattr(self, "_viewer_layout"):
+            return
+        while self._viewer_layout.count():
+            item = self._viewer_layout.takeAt(0)
+            child = item.widget()
+            if child is not None:
+                child.setParent(None)
+                child.deleteLater()
+        self._preview_widget = None
+
+    def _show_error(self, message: str) -> None:
+        self._clear_viewer_container()
+        self._viewer_layout.addWidget(self._build_error_label(message))
+        self._update_info_label(None)
+        self._update_controls_enabled(False)
+        self._current_filename = None
+
+    def _update_info_label(self, stl_path: Optional[str]) -> None:
+        if hasattr(self, "_info_label") and self._info_label is not None:
+            self._info_label.setText(self._format_info_text(stl_path))
+
+    def _format_info_text(self, stl_path: Optional[str]) -> str:
+        parts: list[str] = []
+        if stl_path:
+            parts.append(f"Source: {os.path.basename(stl_path)}")
+        else:
+            parts.append("Source: (not available)")
+        folder = self._model_data.get("folder") or ""
+        if folder:
+            parts.append(f"Folder: {os.path.basename(folder)}")
+        print_time = self._model_data.get("print_time") or ""
+        if print_time:
+            parts.append(f"Print time: {print_time}")
+        return " | ".join(parts)
+
+    def _update_controls_enabled(self, enabled: bool) -> None:
+        if hasattr(self, "_reset_button") and self._reset_button is not None:
+            self._reset_button.setEnabled(enabled)
+
+    def _on_reset_view(self) -> None:
+        if self._preview_widget is not None:
+            self._preview_widget.reset_view()

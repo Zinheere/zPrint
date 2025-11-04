@@ -18,8 +18,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QFrame, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QPushButton, QSizePolicy, QSpacerItem, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget)
+    QListWidget, QPushButton, QSizePolicy, QSpacerItem,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 class Ui_NewModelDialog(object):
     def setupUi(self, NewModelDialog):
@@ -47,18 +47,32 @@ class Ui_NewModelDialog(object):
 
         self.formLayoutModelInfo.setWidget(1, QFormLayout.ItemRole.LabelRole, self.labelStl)
 
-        self.layoutStl = QHBoxLayout()
+        self.layoutStl = QVBoxLayout()
         self.layoutStl.setObjectName(u"layoutStl")
-        self.lineEditStlPath = QLineEdit(self.groupModelInfo)
-        self.lineEditStlPath.setObjectName(u"lineEditStlPath")
-        self.lineEditStlPath.setReadOnly(True)
+        self.listWidgetStlFiles = QListWidget(self.groupModelInfo)
+        self.listWidgetStlFiles.setObjectName(u"listWidgetStlFiles")
+        self.listWidgetStlFiles.setSelectionMode(QListWidget.SingleSelection)
 
-        self.layoutStl.addWidget(self.lineEditStlPath)
+        self.layoutStl.addWidget(self.listWidgetStlFiles)
 
-        self.btnBrowseStl = QPushButton(self.groupModelInfo)
-        self.btnBrowseStl.setObjectName(u"btnBrowseStl")
+        self.layoutStlButtons = QHBoxLayout()
+        self.layoutStlButtons.setObjectName(u"layoutStlButtons")
+        self.btnAddStl = QPushButton(self.groupModelInfo)
+        self.btnAddStl.setObjectName(u"btnAddStl")
 
-        self.layoutStl.addWidget(self.btnBrowseStl)
+        self.layoutStlButtons.addWidget(self.btnAddStl)
+
+        self.btnRemoveStl = QPushButton(self.groupModelInfo)
+        self.btnRemoveStl.setObjectName(u"btnRemoveStl")
+
+        self.layoutStlButtons.addWidget(self.btnRemoveStl)
+
+        self.horizontalSpacerStl = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.layoutStlButtons.addItem(self.horizontalSpacerStl)
+
+
+        self.layoutStl.addLayout(self.layoutStlButtons)
 
 
         self.formLayoutModelInfo.setLayout(1, QFormLayout.ItemRole.FieldRole, self.layoutStl)
@@ -185,8 +199,9 @@ class Ui_NewModelDialog(object):
         NewModelDialog.setWindowTitle(QCoreApplication.translate("NewModelDialog", u"New Model", None))
         self.groupModelInfo.setTitle(QCoreApplication.translate("NewModelDialog", u"Model Info", None))
         self.labelName.setText(QCoreApplication.translate("NewModelDialog", u"Model Name", None))
-        self.labelStl.setText(QCoreApplication.translate("NewModelDialog", u"STL / 3MF File", None))
-        self.btnBrowseStl.setText(QCoreApplication.translate("NewModelDialog", u"Browse...", None))
+        self.labelStl.setText(QCoreApplication.translate("NewModelDialog", u"STL / 3MF Files", None))
+        self.btnAddStl.setText(QCoreApplication.translate("NewModelDialog", u"Add Model File...", None))
+        self.btnRemoveStl.setText(QCoreApplication.translate("NewModelDialog", u"Remove Selected", None))
         self.labelPreview.setText(QCoreApplication.translate("NewModelDialog", u"Preview Image", None))
         self.previewLabel.setText(QCoreApplication.translate("NewModelDialog", u"No Preview", None))
         self.btnChoosePreview.setText(QCoreApplication.translate("NewModelDialog", u"Choose Image", None))

@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -47,6 +49,8 @@ class EditModelDialog(QDialog):
         self.pending_gcode_copies: list[dict] = []
         self.gcode_files_to_delete: list[str] = []
         self.generated_preview_pixmap: QPixmap | None = None
+        self.pending_model_copies: list[dict] = []
+        self.model_files_to_delete: list[str] = []
 
         self._load_metadata()
         self._build_ui()
@@ -72,6 +76,22 @@ class EditModelDialog(QDialog):
 
         self.print_time_edit = QLineEdit(self)
         form.addRow("Print Time", self.print_time_edit)
+
+        model_layout = QVBoxLayout()
+        self.model_list = QListWidget(self)
+        self.model_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        model_layout.addWidget(self.model_list)
+
+        model_buttons = QHBoxLayout()
+        self.add_model_button = QPushButton("Add Model File...", self)
+        self.remove_model_button = QPushButton("Remove Selected", self)
+        self.remove_model_button.setEnabled(False)
+        model_buttons.addWidget(self.add_model_button)
+        model_buttons.addWidget(self.remove_model_button)
+        model_buttons.addStretch(1)
+        model_layout.addLayout(model_buttons)
+
+        form.addRow("Model Files", model_layout)
 
         folder_label = QLabel(self.folder_path or "Unknown", self)
         folder_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -142,6 +162,9 @@ class EditModelDialog(QDialog):
 
         self.button_box.accepted.connect(self._on_accept)
         self.button_box.rejected.connect(self.reject)
+        self.model_list.currentItemChanged.connect(self._on_model_selection_changed)
+        self.add_model_button.clicked.connect(self._on_add_model_file)
+        self.remove_model_button.clicked.connect(self._on_remove_model_file)
         self.delete_button.clicked.connect(self._on_delete_clicked)
         self.choose_preview_button.clicked.connect(self._on_choose_preview)
         self.regenerate_preview_button.clicked.connect(self._on_regenerate_preview)
@@ -170,6 +193,8 @@ class EditModelDialog(QDialog):
             self._update_preview_label(None)
             if preview_name:
                 self.preview_label.setText("Preview image not found")
+
+        self._populate_model_files()
 
         gcodes = self.metadata.get("gcodes") or []
         self.gcode_table.setRowCount(len(gcodes))
@@ -222,6 +247,146 @@ class EditModelDialog(QDialog):
                     "print_time": time_item.text().strip() if time_item else "",
                     "source_path": payload.get("source_path", "") if isinstance(payload, dict) else "",
                     "is_new": bool(payload.get("is_new") if isinstance(payload, dict) else False),
+                }
+            )
+        return rows
+
+    def _populate_model_files(self) -> None:
+        if not hasattr(self, "model_list") or self.model_list is None:
+            return
+        self.model_list.clear()
+        model_files = self._resolve_model_files()
+        for filename in model_files:
+            item = QListWidgetItem(filename)
+            payload = {
+                "file": filename,
+                "source_path": os.path.join(self.folder_path, filename) if self.folder_path else "",
+                "is_new": False,
+            }
+            item.setData(Qt.UserRole, payload)
+            self.model_list.addItem(item)
+        if self.model_list.count():
+            self.model_list.setCurrentRow(0)
+        self._update_model_buttons()
+
+    def _resolve_model_files(self) -> list[str]:
+        raw = self.metadata.get("model_files")
+        if isinstance(raw, list) and raw:
+            return [str(item) for item in raw if item]
+        data_files = self.model_data.get("model_files")
+        if isinstance(data_files, list) and data_files:
+            return [str(item) for item in data_files if item]
+        fallback = (
+            self.metadata.get("model_file")
+            or self.metadata.get("stl_file")
+            or self.model_data.get("model_file")
+            or self.model_data.get("stl_file")
+        )
+        return [str(fallback)] if fallback else []
+
+    def _on_model_selection_changed(self, current, _previous) -> None:
+        self._update_model_buttons()
+
+    def _update_model_buttons(self) -> None:
+        if not hasattr(self, "remove_model_button") or self.remove_model_button is None:
+            return
+        if not hasattr(self, "model_list") or self.model_list is None:
+            self.remove_model_button.setEnabled(False)
+            return
+        count = self.model_list.count()
+        has_selection = self.model_list.currentRow() >= 0
+        self.remove_model_button.setEnabled(bool(has_selection and count > 1))
+
+    def _on_add_model_file(self) -> None:
+        start_dir = self.folder_path if self.folder_path else os.path.expanduser("~")
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select Model Files",
+            start_dir,
+            "3D Models (*.stl *.STL *.3mf *.3MF);;All Files (*)",
+        )
+        if not paths:
+            return
+        existing_names = {
+            self.model_list.item(index).text().lower()
+            for index in range(self.model_list.count())
+            if self.model_list.item(index)
+        }
+        added = False
+        for path in paths:
+            if not os.path.isfile(path):
+                continue
+            base_name = os.path.basename(path)
+            if base_name.lower() in existing_names:
+                QMessageBox.warning(
+                    self,
+                    "Duplicate File",
+                    f"A model file named '{base_name}' is already associated with this model.",
+                )
+                continue
+            item = QListWidgetItem(base_name)
+            payload = {
+                "file": base_name,
+                "source_path": path,
+                "is_new": True,
+            }
+            item.setData(Qt.UserRole, payload)
+            self.model_list.addItem(item)
+            existing_names.add(base_name.lower())
+            added = True
+        if added:
+            self.model_list.setCurrentRow(self.model_list.count() - 1)
+            self._update_model_buttons()
+
+    def _on_remove_model_file(self) -> None:
+        if not self.model_list:
+            return
+        row = self.model_list.currentRow()
+        if row < 0:
+            return
+        if self.model_list.count() <= 1:
+            QMessageBox.warning(self, "Model Files", "At least one model file must remain in the package.")
+            return
+        item = self.model_list.item(row)
+        payload = item.data(Qt.UserRole) if item else {}
+        if isinstance(payload, dict) and not payload.get("is_new"):
+            file_name = payload.get("file") or item.text()
+            prompt = QMessageBox(self)
+            prompt.setWindowTitle("Remove Model File")
+            prompt.setIcon(QMessageBox.Question)
+            prompt.setText("Remove this model file? Optionally delete the file from disk as well.")
+            delete_btn = prompt.addButton("Remove && Delete", QMessageBox.AcceptRole)
+            prompt.addButton("Remove Only", QMessageBox.DestructiveRole)
+            cancel_btn = prompt.addButton(QMessageBox.Cancel)
+            prompt.setDefaultButton(delete_btn)
+            prompt.exec()
+            clicked = prompt.clickedButton()
+            if clicked is cancel_btn:
+                return
+            if clicked is delete_btn and file_name and file_name not in self.model_files_to_delete:
+                self.model_files_to_delete.append(file_name)
+        self.model_list.takeItem(row)
+        if self.model_list.count():
+            self.model_list.setCurrentRow(min(row, self.model_list.count() - 1))
+        self._update_model_buttons()
+
+    def _collect_model_rows(self) -> list[dict]:
+        rows: list[dict] = []
+        if not self.model_list:
+            return rows
+        for index in range(self.model_list.count()):
+            item = self.model_list.item(index)
+            if not item:
+                continue
+            payload = item.data(Qt.UserRole) or {}
+            if isinstance(payload, str):
+                payload = {"file": payload, "source_path": "", "is_new": False}
+            file_name = payload.get("file") or item.text()
+            rows.append(
+                {
+                    "file": file_name,
+                    "source_path": payload.get("source_path", ""),
+                    "is_new": bool(payload.get("is_new")),
                 }
             )
         return rows
@@ -282,7 +447,7 @@ class EditModelDialog(QDialog):
         self._update_preview_label(pixmap)
 
     def _on_regenerate_preview(self) -> None:
-        model_path = self._resolve_model_path()
+        model_path = self._current_model_path_for_preview() or self._resolve_model_path()
         if not model_path:
             QMessageBox.warning(self, "Regenerate Preview", "Unable to locate the model file for this entry.")
             return
@@ -379,6 +544,37 @@ class EditModelDialog(QDialog):
         metadata = deepcopy(self.metadata)
         metadata["name"] = name
         metadata["print_time"] = self.print_time_edit.text().strip()
+        model_rows = self._collect_model_rows()
+        if not model_rows:
+            QMessageBox.warning(self, "Missing Data", "Select at least one model file.")
+            return
+
+        model_used_names: set[str] = set()
+        model_entries: list[dict] = []
+        model_copies: list[dict] = []
+        for index, entry in enumerate(model_rows):
+            base_name = entry.get("file") or os.path.basename(entry.get("source_path") or "")
+            if not base_name:
+                QMessageBox.warning(self, "Invalid Entry", "A model entry has no filename.")
+                return
+            unique_name = self._ensure_unique_filename(base_name, model_used_names)
+            if unique_name != entry.get("file"):
+                item = self.model_list.item(index)
+                if item:
+                    item.setText(unique_name)
+                    payload = item.data(Qt.UserRole) or {}
+                    if isinstance(payload, dict):
+                        payload["file"] = unique_name
+                        item.setData(Qt.UserRole, payload)
+            model_entries.append({"file": unique_name})
+            if entry.get("is_new") and entry.get("source_path"):
+                model_copies.append({"source": entry["source_path"], "dest": unique_name})
+
+        metadata["model_files"] = [entry["file"] for entry in model_entries]
+        if metadata["model_files"]:
+            metadata["model_file"] = metadata["model_files"][0]
+            metadata["stl_file"] = metadata["model_files"][0]
+
         collected = self._collect_gcode_rows()
         if any(not row.get("file") and not row.get("source_path") for row in collected):
             QMessageBox.warning(self, "Invalid Entry", "Each G-code row must reference a file.")
@@ -410,6 +606,9 @@ class EditModelDialog(QDialog):
         self.gcode_files_to_delete = [name for name in self.gcode_files_to_delete if name.lower() not in current_files]
         metadata["gcodes"] = gcodes
         self.pending_gcode_copies = pending_copies
+        self.pending_model_copies = model_copies
+        current_model_set = {name.lower() for name in metadata.get("model_files", [])}
+        self.model_files_to_delete = [name for name in self.model_files_to_delete if name.lower() not in current_model_set]
         if self.preview_changed and self.new_preview_source_path:
             preview_name = self.new_preview_filename or os.path.basename(self.new_preview_source_path)
             metadata["preview_image"] = preview_name
@@ -471,12 +670,22 @@ class EditModelDialog(QDialog):
         return material, colour, print_time
 
     def _resolve_model_path(self) -> str | None:
-        filename = (
-            self.metadata.get("model_file")
-            or self.metadata.get("stl_file")
-            or self.model_data.get("model_file")
-            or self.model_data.get("stl_file")
-        )
+        model_files = self._resolve_model_files()
+        filename = model_files[0] if model_files else None
+        if not filename or not self.folder_path:
+            return None
+        candidate = os.path.join(self.folder_path, filename)
+        if os.path.exists(candidate):
+            return candidate
+        return None
+
+    def _current_model_path_for_preview(self) -> str | None:
+        if not self.model_list or not self.model_list.currentItem():
+            return None
+        payload = self.model_list.currentItem().data(Qt.UserRole) or {}
+        if isinstance(payload, dict) and payload.get("is_new") and payload.get("source_path"):
+            return payload["source_path"]
+        filename = payload.get("file") or self.model_list.currentItem().text()
         if not filename or not self.folder_path:
             return None
         candidate = os.path.join(self.folder_path, filename)
