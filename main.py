@@ -2,7 +2,6 @@ import sys
 import os
 import json
 import re
-import html
 import shutil
 from datetime import datetime
 from functools import partial
@@ -126,15 +125,32 @@ class MainWindow(QMainWindow):
                 self.setMenuBar(menu_bar)
 
         active_menu_bar = self.menuBar() or menu_bar
-        about_action = self.findChild(QAction, 'actionAbout')
-        exit_action = self.findChild(QAction, 'actionExit')
-        help_action = self.findChild(QAction, 'actionHelpContents')
-        if about_action is None and active_menu_bar is not None:
-            about_action = active_menu_bar.findChild(QAction, 'actionAbout')
-        if exit_action is None and active_menu_bar is not None:
-            exit_action = active_menu_bar.findChild(QAction, 'actionExit')
-        if help_action is None and active_menu_bar is not None:
-            help_action = active_menu_bar.findChild(QAction, 'actionHelpContents')
+
+        def resolve_action(object_name: str) -> QAction | None:
+            candidates = (
+                self,
+                active_menu_bar,
+                getattr(self, 'ui', None),
+            )
+            for owner in candidates:
+                if owner is None:
+                    continue
+                action = owner.findChild(QAction, object_name)
+                if action is not None:
+                    return action
+            if active_menu_bar is not None:
+                for action in active_menu_bar.actions():
+                    submenu = action.menu()
+                    if submenu is None:
+                        continue
+                    match = submenu.findChild(QAction, object_name)
+                    if match is not None:
+                        return match
+            return None
+
+        about_action = resolve_action('actionAbout')
+        exit_action = resolve_action('actionExit')
+        help_action = resolve_action('actionHelpContents')
         if about_action is not None:
             about_action.triggered.connect(self._show_about_dialog)
         if exit_action is not None:
@@ -264,17 +280,17 @@ class MainWindow(QMainWindow):
 
     def _show_about_dialog(self) -> None:
         description = (
-            "<p><strong>zPrint</strong> helps organise printable models, previews, and G-code"
-            " storage so you can keep removable media and variant files in sync.</p>"
+            "<p><strong>zPrint</strong> helps organise printable models, stl/3mf files, and G-code"
+            " files so you can keep your sd cards and model variants in sync.</p>"
             f"<p>Version {APP_VERSION}</p>"
-            "<p>Built for rapid iteration on printable parts with streamlined import,"
-            " preview, and activation workflows.</p>"
+            "<p>Built for at-a-glace file viewing with streamlined import,"
+            " preview, and activation.</p>"
         )
         QMessageBox.about(self, "About zPrint", description)
 
     def _show_help_dialog(self) -> None:
         # Build a simple scrollable help viewer sourced from README instructions.
-        html_body, plain_fallback = self._build_help_content()
+        markdown_body, plain_fallback = self._build_help_content()
         dialog = QDialog(self)
         dialog.setWindowTitle("Using zPrint")
         dialog.setModal(True)
@@ -282,8 +298,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(dialog)
         viewer = QTextBrowser(dialog)
         viewer.setOpenExternalLinks(True)
-        if html_body:
-            viewer.setHtml(html_body)
+        if markdown_body:
+            try:
+                viewer.setMarkdown(markdown_body)
+            except Exception:
+                viewer.setPlainText(plain_fallback or markdown_body)
         else:
             viewer.setPlainText(plain_fallback or "Usage instructions are not available.")
         layout.addWidget(viewer)
@@ -303,8 +322,7 @@ class MainWindow(QMainWindow):
         section = self._extract_markdown_section(markdown, r'^##\s+Using zPrint\b')
         if not section.strip():
             section = markdown
-        html_body = self._markdown_to_basic_html(section)
-        return html_body or None, section
+        return section, section
 
     def _extract_markdown_section(self, markdown: str, heading_pattern: str) -> str:
         pattern = re.compile(heading_pattern, re.MULTILINE)
@@ -316,62 +334,6 @@ class MainWindow(QMainWindow):
         end = next_heading.start() if next_heading else len(markdown)
         return markdown[start:end].strip()
 
-    def _markdown_to_basic_html(self, markdown: str) -> str:
-        if not markdown.strip():
-            return ''
-        html_parts: list[str] = []
-        in_ul = False
-        in_ol = False
-
-        def flush_lists() -> None:
-            nonlocal in_ul, in_ol
-            if in_ul:
-                html_parts.append('</ul>')
-                in_ul = False
-            if in_ol:
-                html_parts.append('</ol>')
-                in_ol = False
-
-        numbered_re = re.compile(r'^(\d+)\.\s+(.*)')
-        for raw_line in markdown.splitlines():
-            stripped = raw_line.strip()
-            if not stripped:
-                flush_lists()
-                continue
-            if stripped.startswith('### '):
-                flush_lists()
-                html_parts.append(f"<h3>{html.escape(stripped[4:].strip())}</h3>")
-                continue
-            if stripped.startswith('## '):
-                flush_lists()
-                html_parts.append(f"<h2>{html.escape(stripped[3:].strip())}</h2>")
-                continue
-            numbered_match = numbered_re.match(stripped)
-            if numbered_match:
-                if in_ul:
-                    html_parts.append('</ul>')
-                    in_ul = False
-                if not in_ol:
-                    html_parts.append('<ol>')
-                    in_ol = True
-                html_parts.append(f"<li>{html.escape(numbered_match.group(2).strip())}</li>")
-                continue
-            if stripped.startswith('- '):
-                if in_ol:
-                    html_parts.append('</ol>')
-                    in_ol = False
-                if not in_ul:
-                    html_parts.append('<ul>')
-                    in_ul = True
-                html_parts.append(f"<li>{html.escape(stripped[2:].strip())}</li>")
-                continue
-            flush_lists()
-            html_parts.append(f"<p>{html.escape(stripped)}</p>")
-
-        flush_lists()
-        if not html_parts:
-            return ''
-        return '<div class="help-section">' + ''.join(html_parts) + '</div>'
 
     def resizeEvent(self, event):
         # Update button sizes whenever the main window resizes so they scale with the window
