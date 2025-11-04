@@ -2,11 +2,12 @@
 
 > ### Streamlined print file organiser &amp; model gallery
 
-**Current:** 0.4.1 – *Official release*
+**Current:** 0.4.1 – Top menu
 
-## Installer
+## ⬇️ Install ⬇️
 
-- ✅ The signed Windows installer is ready at [releases](https://github.com/Zinheere/zPrint/releases/latest). Run it to install zPrint with shortcuts and file associations.
+### ✅ DOWNLOAD INSTALLER FROM [RELEASES](https://github.com/Zinheere/zPrint/releases/latest)
+- Run it to install zPrint with shortcuts and file associations.
 - Prefer a portable build? Use the self-contained folder in `dist\zPrint\`.
 
 ## Using zPrint
@@ -47,15 +48,6 @@
 - Implemented a storage relocation tool that moves the existing model library when switching folders.
 - Tuned the theme toggle and top-bar buttons to scale icons with window size and keep columns evenly spaced.
 - Normalised gallery column widths so cards align cleanly at any window size.
-
-### 0.4.0 (2025-11-04)
-
-- Consolidated storage configuration around a single `storage_path`, migrating legacy settings and prompting when removable drives are missing.
-- Added an Active/Inactive toggle on each model card that copies the selected G-code into the storage root and keeps metadata in sync.
-- Introduced removable-drive detection with a toolbar “Eject SD” control that safely dismounts cards directly from zPrint.
-- Refined gallery styling with consistent card sizing, clearer delete/activate affordances, and aligned top-bar buttons.
-- Simplified the welcome, import, and add-model flows to reuse the chosen storage location while ensuring folders are created when needed.
-- Hardened configuration persistence and prompts so storage updates, drive changes, and theme selections are saved immediately.
 
 ## Building
 
