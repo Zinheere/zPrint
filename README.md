@@ -1,6 +1,6 @@
 # zPrint
 
-> ### Streamlined model viewer &amp; print file organiser
+> ### Streamlined print file organiser &amp; model gallery
 
 **Current:** 0.4.0 – *Official release*
 
