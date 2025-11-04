@@ -1,7 +1,7 @@
 # Project TODO
 
 0.5.0 main features:
-- [ ] About dialog in the top menu
+- [x] About dialog in the top menu
 - [ ] Auto-create models from unsorted G-code and model files (Import button)
 - [x] Eject SD card option when storage lives on an SD drive
 - [ ] G-code preview button in the 3D preview dialog (3D view)

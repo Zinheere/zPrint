@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import re
+import html
 import shutil
 from datetime import datetime
 from functools import partial
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QDialog,
+    QDialogButtonBox,
     QMainWindow,
     QMessageBox,
     QLabel,
@@ -21,10 +23,12 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QWidget,
     QProgressBar,
+    QMenuBar,
+    QTextBrowser,
 )
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QSize, QEvent, QTimer, QEventLoop
-from PySide6.QtGui import QIcon, QFont, QPixmap
+from PySide6.QtGui import QAction, QIcon, QFont, QPixmap
 
 from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
@@ -96,6 +100,7 @@ class MainWindow(QMainWindow):
 
         # The .ui file's top-level widget is a QMainWindow. We are already a QMainWindow
         # subclass, so extract the central widget from the loaded UI and set it here.
+        menu_bar = None
         if isinstance(loaded, QMainWindow):
             central = loaded.findChild(QWidget, 'centralwidget')
             if central is not None:
@@ -105,10 +110,37 @@ class MainWindow(QMainWindow):
                 self.setCentralWidget(loaded)
             # keep reference to the loaded object so we can find children inside it
             self.ui = loaded
+            menu_bar = loaded.menuBar()
         else:
             # loaded a widget (not a QMainWindow) - use it directly
             self.ui = loaded
             self.setCentralWidget(self.ui)
+            menu_bar = self.findChild(QMenuBar, 'menubar')
+
+        if menu_bar is not None:
+            try:
+                menu_bar.setNativeMenuBar(False)
+            except Exception:
+                pass
+            if menu_bar.parent() is not self:
+                self.setMenuBar(menu_bar)
+
+        active_menu_bar = self.menuBar() or menu_bar
+        about_action = self.findChild(QAction, 'actionAbout')
+        exit_action = self.findChild(QAction, 'actionExit')
+        help_action = self.findChild(QAction, 'actionHelpContents')
+        if about_action is None and active_menu_bar is not None:
+            about_action = active_menu_bar.findChild(QAction, 'actionAbout')
+        if exit_action is None and active_menu_bar is not None:
+            exit_action = active_menu_bar.findChild(QAction, 'actionExit')
+        if help_action is None and active_menu_bar is not None:
+            help_action = active_menu_bar.findChild(QAction, 'actionHelpContents')
+        if about_action is not None:
+            about_action.triggered.connect(self._show_about_dialog)
+        if exit_action is not None:
+            exit_action.triggered.connect(self.close)
+        if help_action is not None:
+            help_action.triggered.connect(self._show_help_dialog)
 
         # Access top bar buttons by object name (use findChild because loader returned
         # a separate object rather than attaching attributes to this instance)
@@ -230,6 +262,117 @@ class MainWindow(QMainWindow):
 
         self._create_loading_overlay()
 
+    def _show_about_dialog(self) -> None:
+        description = (
+            "<p><strong>zPrint</strong> helps organise printable models, previews, and G-code"
+            " storage so you can keep removable media and variant files in sync.</p>"
+            f"<p>Version {APP_VERSION}</p>"
+            "<p>Built for rapid iteration on printable parts with streamlined import,"
+            " preview, and activation workflows.</p>"
+        )
+        QMessageBox.about(self, "About zPrint", description)
+
+    def _show_help_dialog(self) -> None:
+        # Build a simple scrollable help viewer sourced from README instructions.
+        html_body, plain_fallback = self._build_help_content()
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Using zPrint")
+        dialog.setModal(True)
+        dialog.resize(720, 560)
+        layout = QVBoxLayout(dialog)
+        viewer = QTextBrowser(dialog)
+        viewer.setOpenExternalLinks(True)
+        if html_body:
+            viewer.setHtml(html_body)
+        else:
+            viewer.setPlainText(plain_fallback or "Usage instructions are not available.")
+        layout.addWidget(viewer)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def _build_help_content(self) -> tuple[str | None, str]:
+        readme_path = os.path.join(self.app_dir, 'README.md')
+        try:
+            with open(readme_path, 'r', encoding='utf-8') as handle:
+                markdown = handle.read()
+        except Exception as exc:
+            return None, f"Unable to load documentation from {readme_path}.\n{exc}"
+        section = self._extract_markdown_section(markdown, r'^##\s+Using zPrint\b')
+        if not section.strip():
+            section = markdown
+        html_body = self._markdown_to_basic_html(section)
+        return html_body or None, section
+
+    def _extract_markdown_section(self, markdown: str, heading_pattern: str) -> str:
+        pattern = re.compile(heading_pattern, re.MULTILINE)
+        match = pattern.search(markdown)
+        if not match:
+            return ''
+        start = match.start()
+        next_heading = re.compile(r'^##\s+', re.MULTILINE).search(markdown, match.end())
+        end = next_heading.start() if next_heading else len(markdown)
+        return markdown[start:end].strip()
+
+    def _markdown_to_basic_html(self, markdown: str) -> str:
+        if not markdown.strip():
+            return ''
+        html_parts: list[str] = []
+        in_ul = False
+        in_ol = False
+
+        def flush_lists() -> None:
+            nonlocal in_ul, in_ol
+            if in_ul:
+                html_parts.append('</ul>')
+                in_ul = False
+            if in_ol:
+                html_parts.append('</ol>')
+                in_ol = False
+
+        numbered_re = re.compile(r'^(\d+)\.\s+(.*)')
+        for raw_line in markdown.splitlines():
+            stripped = raw_line.strip()
+            if not stripped:
+                flush_lists()
+                continue
+            if stripped.startswith('### '):
+                flush_lists()
+                html_parts.append(f"<h3>{html.escape(stripped[4:].strip())}</h3>")
+                continue
+            if stripped.startswith('## '):
+                flush_lists()
+                html_parts.append(f"<h2>{html.escape(stripped[3:].strip())}</h2>")
+                continue
+            numbered_match = numbered_re.match(stripped)
+            if numbered_match:
+                if in_ul:
+                    html_parts.append('</ul>')
+                    in_ul = False
+                if not in_ol:
+                    html_parts.append('<ol>')
+                    in_ol = True
+                html_parts.append(f"<li>{html.escape(numbered_match.group(2).strip())}</li>")
+                continue
+            if stripped.startswith('- '):
+                if in_ol:
+                    html_parts.append('</ol>')
+                    in_ol = False
+                if not in_ul:
+                    html_parts.append('<ul>')
+                    in_ul = True
+                html_parts.append(f"<li>{html.escape(stripped[2:].strip())}</li>")
+                continue
+            flush_lists()
+            html_parts.append(f"<p>{html.escape(stripped)}</p>")
+
+        flush_lists()
+        if not html_parts:
+            return ''
+        return '<div class="help-section">' + ''.join(html_parts) + '</div>'
+
     def resizeEvent(self, event):
         # Update button sizes whenever the main window resizes so they scale with the window
         try:
@@ -251,11 +394,10 @@ class MainWindow(QMainWindow):
         target_h = max(28, min(56, int(win_h * 0.06)))
 
         for btn in self.top_bar_buttons:
-            # theme button square only if an SVG icon is present
-            if btn.objectName() == 'btnThemeToggle' and getattr(self, '_theme_icon_path', None):
+            is_theme_btn = btn.objectName() == 'btnThemeToggle' and bool(getattr(self, '_theme_icon_path', None))
+            if is_theme_btn:
                 btn.setFixedSize(QSize(target_h, target_h))
-                # Cap icon size so it doesn't get oversized on big windows
-                icon_dim = min(24, max(12, target_h - 12))
+                icon_dim = max(16, min(target_h - 8, 64))
                 try:
                     btn.setIconSize(QSize(icon_dim, icon_dim))
                 except Exception:
@@ -278,7 +420,7 @@ class MainWindow(QMainWindow):
                 btn.setProperty('topBarButton', True)
                 btn.setFont(f)
                 # Adjust icon size for icon-bearing buttons (only if explicitly set)
-                if not btn.icon().isNull():
+                if not is_theme_btn and not btn.icon().isNull():
                     icon_dim = min(22, max(12, target_h - 14))
                     btn.setIconSize(QSize(icon_dim, icon_dim))
             except Exception:

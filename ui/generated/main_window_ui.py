@@ -11,19 +11,30 @@
 from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
     QMetaObject, QObject, QPoint, QRect,
     QSize, QTime, QUrl, Qt)
-from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
-    QFont, QFontDatabase, QGradient, QIcon,
-    QImage, QKeySequence, QLinearGradient, QPainter,
-    QPalette, QPixmap, QRadialGradient, QTransform)
+from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
+    QCursor, QFont, QFontDatabase, QGradient,
+    QIcon, QImage, QKeySequence, QLinearGradient,
+    QPainter, QPalette, QPixmap, QRadialGradient,
+    QTransform)
 from PySide6.QtWidgets import (QApplication, QComboBox, QGridLayout, QHBoxLayout,
-    QLineEdit, QMainWindow, QPushButton, QScrollArea,
-    QSizePolicy, QVBoxLayout, QWidget)
+    QLineEdit, QMainWindow, QMenu, QMenuBar,
+    QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
+    QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
         MainWindow.resize(739, 700)
+        self.actionAbout = QAction(MainWindow)
+        self.actionAbout.setObjectName(u"actionAbout")
+        self.actionAbout.setMenuRole(QAction.AboutRole)
+        self.actionExit = QAction(MainWindow)
+        self.actionExit.setObjectName(u"actionExit")
+        self.actionExit.setMenuRole(QAction.QuitRole)
+        self.actionHelpContents = QAction(MainWindow)
+        self.actionHelpContents.setObjectName(u"actionHelpContents")
+        self.actionHelpContents.setMenuRole(QAction.NoRole)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout = QVBoxLayout(self.centralwidget)
@@ -92,6 +103,21 @@ class Ui_MainWindow(object):
         self.verticalLayout.addWidget(self.scrollArea)
 
         MainWindow.setCentralWidget(self.centralwidget)
+        self.menubar = QMenuBar(MainWindow)
+        self.menubar.setObjectName(u"menubar")
+        self.menubar.setGeometry(QRect(0, 0, 739, 22))
+        self.menubar.setNativeMenuBar(False)
+        self.menuFile = QMenu(self.menubar)
+        self.menuFile.setObjectName(u"menuFile")
+        self.menuHelp = QMenu(self.menubar)
+        self.menuHelp.setObjectName(u"menuHelp")
+        MainWindow.setMenuBar(self.menubar)
+
+        self.menubar.addAction(self.menuFile.menuAction())
+        self.menubar.addAction(self.menuHelp.menuAction())
+        self.menuFile.addAction(self.actionExit)
+        self.menuHelp.addAction(self.actionHelpContents)
+        self.menuHelp.addAction(self.actionAbout)
 
         self.retranslateUi(MainWindow)
 
@@ -99,6 +125,12 @@ class Ui_MainWindow(object):
     # setupUi
 
     def retranslateUi(self, MainWindow):
+        self.actionAbout.setText(QCoreApplication.translate("MainWindow", u"About zPrint", None))
+        self.actionExit.setText(QCoreApplication.translate("MainWindow", u"Exit", None))
+#if QT_CONFIG(shortcut)
+        self.actionExit.setShortcut(QCoreApplication.translate("MainWindow", u"Ctrl+Q", None))
+#endif // QT_CONFIG(shortcut)
+        self.actionHelpContents.setText(QCoreApplication.translate("MainWindow", u"View Instructions", None))
         self.btnThemeToggle.setText(QCoreApplication.translate("MainWindow", u"Theme", None))
         self.btnReload.setText(QCoreApplication.translate("MainWindow", u"Reload", None))
         self.btnImport.setText(QCoreApplication.translate("MainWindow", u"Import", None))
@@ -112,6 +144,8 @@ class Ui_MainWindow(object):
 
         self.filterDropdown.setItemText(0, QCoreApplication.translate("MainWindow", u"All Materials", None))
 
+        self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"&File", None))
+        self.menuHelp.setTitle(QCoreApplication.translate("MainWindow", u"&Help", None))
         pass
     # retranslateUi
 
