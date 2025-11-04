@@ -31,6 +31,7 @@ from core.stl_preview import render_stl_preview
 from ui.new_model_dialog import NewModelDialog
 from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
+from ui.welcome_dialog import WelcomeDialog
 
 APP_VERSION = "0.30 beta"
 
@@ -55,6 +56,11 @@ class MainWindow(QMainWindow):
         self.loading_label = None
         self.loading_progress = None
         self.load_ui()
+        if not self._run_welcome_flow_if_needed():
+            app = QApplication.instance()
+            if app is not None:
+                QTimer.singleShot(0, app.quit)
+            return
         # apply the chosen theme immediately on startup
         self.apply_theme(self.dark_theme)
         # ensure the window opens at a comfortable working size
@@ -383,7 +389,8 @@ class MainWindow(QMainWindow):
             'mode': 'local',
             'local_path': self._default_models_directory(),
             'microsd_path': '',
-            'theme': 'light'
+            'theme': 'light',
+            'welcome_completed': False,
         }
         data = {}
         if os.path.exists(self._config_path):
@@ -428,6 +435,38 @@ class MainWindow(QMainWindow):
                 json.dump(self.config, fh, ensure_ascii=False, indent=2)
         except Exception:
             pass
+
+    def _run_welcome_flow_if_needed(self) -> bool:
+        if self.config.get('welcome_completed'):
+            return True
+
+        default_path = self._default_models_directory()
+        initial_path = self.config.get('local_path') or default_path
+        dialog = WelcomeDialog(
+            self,
+            initial_path=initial_path,
+            default_path=default_path,
+            theme=self.config.get('theme', 'light'),
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return False
+
+        result = dialog.result_data or {}
+        chosen_path = result.get('models_path') or initial_path
+        theme_choice = (result.get('theme') or 'light').lower()
+        if theme_choice not in ('light', 'dark'):
+            theme_choice = 'light'
+
+        self.config['mode'] = 'local'
+        self.config['local_path'] = chosen_path
+        self.config['theme'] = theme_choice
+        self.config['welcome_completed'] = True
+
+        self._initialize_models_folder(chosen_path)
+        self.models_root = self._resolve_models_root()
+        self.dark_theme = theme_choice == 'dark'
+        self._save_config()
+        return True
 
     def _resolve_models_root(self) -> str:
         mode = (self.config.get('mode') or 'local').lower()

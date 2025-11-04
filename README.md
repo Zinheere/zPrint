@@ -4,31 +4,52 @@
 
 *Work in progress*
 
-**Current:** 0.30 beta – Polishing dialogues
+**Current:** 0.30 beta – Official release
+
+### Installer Status
+
+- ✅ The signed Windows installer is ready at `dist\installer\zPrint-Setup.exe`. Run it to deploy zPrint with shortcuts and file associations.
+- Prefer a portable build? Use the self-contained folder in `dist\zPrint\`.
 
 ## Release Notes
 
-### 0.30 beta (2025-11-03)
+### 0.30 beta (2025-11-04)
 
-- Added determinate loading overlays for gallery refreshes and the VisPy preview dialog so the window stays responsive during heavy work.
-- Expanded the Edit Model dialog with preview swapping, metadata validation, and full G-code management (add, remove, copy, delete).
-- Persisted theme selection and default storage mode immediately on change to keep import defaults in sync across sessions.
-- Improved 3MF preview generation by rendering multi-part models directly and falling back to embedded thumbnails when available.
+- Tuned the VisPy-powered 3D viewer for smooth orbit, pan, and zoom across large STL and 3MF models, including graceful fallbacks when meshes fail to process.
+- Expanded the Edit Model dialog with a Regenerate Preview button, richer metadata validation, and one-click G-code management (add, remove, copy, delete).
+- Added a first-launch welcome prompt to guide storage location selection and default theme setup.
+- Added determinate progress overlays around gallery refreshes and preview generation so the window stays responsive during heavy work.
+- Persisted theme selection and default storage mode immediately and enlarged the default main window to 1280×900 for better first-run ergonomics.
+- Hardened 3MF preview generation and packaging by bundling SciPy, networkx, and lxml along with the VisPy runtime, ensuring the standalone build and installer ship all viewer dependencies.
 
-### 0.20 beta (2025-11-03)
+## Using zPrint
 
-- Replaced the STL preview dialog with a VisPy-powered renderer for smooth, GPU-accelerated orbit and zoom.
-- Added 3MF support across gallery thumbnails and the interactive 3D viewer.
-- Added configurable import flow with folder creation and config persistence in `%APPDATA%\zPrint`.
-- Simplified empty gallery state and ensured document-root defaults target the user Documents directory.
-- Introduced PyInstaller/ Inno Setup packaging scripts for portable builds and Windows installers.
-- Embedded official logo into executable, installer, and shortcuts.
+### First Launch
 
-### 0.10 beta (initial drop)
+1. Install via `zPrint-Setup.exe` (or extract `dist\zPrint\` for a portable copy).
+2. Start zPrint; the welcome prompts guide you through selecting a storage location and default theme. The app creates a `models.json` library and folders if needed.
+3. You can update both choices later from the gear menu in the main window.
 
-- Established gallery UI with search, sort, and material filtering controls.
-- Wired theme toggle, loading overlays, and adaptive STL thumbnail rendering.
-- Added New Model dialog skeleton and core JSON-loading pipeline.
+### Organising Models
+
+- Click **Import** to add existing STL/3MF models and associated G-code. zPrint creates a folder per model and copies the selected files into the library.
+- Use the top search bar and sort/material filters to locate models quickly.
+- Mark G-code files as *active* and copy them to removable storage via the Edit Model dialog.
+
+### Editing Metadata & Previews
+
+- Select a card and press **Edit Model** to change name, material, nozzle, and notes. Validation runs inline so you catch issues before saving.
+- Use **Regenerate Preview** to rebuild the thumbnail from the source mesh. You can also choose a custom preview image.
+
+### 3D Viewer
+
+- Hit **3D View** on any card to open the VisPy preview. Orbit with left-drag, pan with right-drag, zoom with the wheel.
+- Multi-part 3MF files load as a combined mesh; if processing fails, zPrint falls back to embedded thumbnails.
+
+### Managing Files
+
+- Copy, remove, or replace associated G-code directly from the Edit dialog without leaving the app.
+- The gallery shows determinate progress overlays during heavy operations so the window stays responsive.
 
 ## Building
 
