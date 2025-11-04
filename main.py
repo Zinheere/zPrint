@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QDialog,
     QDialogButtonBox,
+    QCheckBox,
     QMainWindow,
     QMessageBox,
     QLabel,
@@ -42,7 +43,7 @@ APP_VERSION = "0.4.1"
 
 
 class StorageSettingsDialog(QDialog):
-    def __init__(self, current_path: str, parent: QWidget | None = None):
+    def __init__(self, current_path: str, delete_sources: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle('Storage Settings')
         self.setModal(True)
@@ -50,6 +51,7 @@ class StorageSettingsDialog(QDialog):
         resolved_current = os.path.expandvars(os.path.expanduser(str(current_path or '')))
         self._current_path = os.path.abspath(resolved_current) if resolved_current else ''
         self._chosen_path = self._current_path
+        self._delete_sources = bool(delete_sources)
 
         layout = QVBoxLayout(self)
         description = QLabel('Manage the folder where zPrint stores your models and G-code files.')
@@ -69,6 +71,11 @@ class StorageSettingsDialog(QDialog):
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
+        self.delete_checkbox = QCheckBox('Delete original files after import')
+        self.delete_checkbox.setChecked(self._delete_sources)
+        self.delete_checkbox.setToolTip('Removes source STL and G-code files once they are copied into the zPrint library.')
+        layout.addWidget(self.delete_checkbox)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -86,6 +93,10 @@ class StorageSettingsDialog(QDialog):
     @property
     def selected_path(self) -> str:
         return self._chosen_path
+
+    @property
+    def delete_sources_enabled(self) -> bool:
+        return self.delete_checkbox.isChecked()
 
 
 class MainWindow(QMainWindow):
@@ -369,15 +380,28 @@ class MainWindow(QMainWindow):
         current_raw = self.config.get('storage_path') or self.models_root or self._default_models_directory()
         current_raw = os.path.expandvars(os.path.expanduser(str(current_raw or '')))
         current_path = os.path.abspath(current_raw) if current_raw else ''
-        dialog = StorageSettingsDialog(current_path, self)
+        delete_pref = bool(self.config.get('delete_source_after_import', False))
+        dialog = StorageSettingsDialog(current_path, delete_pref, self)
         if dialog.exec() != QDialog.Accepted:
             return
         new_path = dialog.selected_path
-        if not new_path:
-            return
-        if os.path.abspath(new_path) == current_path:
-            return
-        self._apply_storage_location_change(new_path)
+        new_delete_pref = bool(dialog.delete_sources_enabled)
+
+        config_changed = False
+        if new_delete_pref != delete_pref:
+            self.config['delete_source_after_import'] = new_delete_pref
+            config_changed = True
+
+        if new_path:
+            resolved_new = os.path.abspath(os.path.expandvars(os.path.expanduser(str(new_path))))
+        else:
+            resolved_new = current_path
+
+        if resolved_new and resolved_new != current_path:
+            self._apply_storage_location_change(resolved_new)
+            config_changed = True
+        elif config_changed:
+            self._save_config()
 
     def _apply_storage_location_change(self, new_path: str) -> None:
         current_raw = str(self.models_root) if getattr(self, 'models_root', None) else ''
@@ -484,6 +508,34 @@ class MainWindow(QMainWindow):
             return False
         finally:
             self._hide_loading()
+
+    def _remove_original_files(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        seen: set[str] = set()
+        failures: list[tuple[str, Exception]] = []
+        for raw in paths:
+            if not raw:
+                continue
+            resolved = os.path.abspath(os.path.expandvars(os.path.expanduser(str(raw))))
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            try:
+                if not os.path.exists(resolved) or os.path.isdir(resolved):
+                    continue
+                os.remove(resolved)
+            except Exception as exc:
+                failures.append((resolved, exc))
+        if failures:
+            details = '\n'.join(f"- {os.path.basename(path)}: {exc}" for path, exc in failures[:5])
+            if len(failures) > 5:
+                details += '\n- ...'
+            QMessageBox.warning(
+                self,
+                'Delete Source Files',
+                'Some source files could not be deleted. You may need to remove them manually.\n' + details,
+            )
 
     def _build_help_content(self) -> tuple[str | None, str]:
         readme_path = os.path.join(self.app_dir, 'README.md')
@@ -900,6 +952,7 @@ class MainWindow(QMainWindow):
             'storage_path': self._default_models_directory(),
             'theme': 'light',
             'welcome_completed': False,
+            'delete_source_after_import': False,
         }
         data = {}
         if os.path.exists(self._config_path):
@@ -918,6 +971,7 @@ class MainWindow(QMainWindow):
                     data = {}
         config = defaults.copy()
         config.update(data)
+        config['delete_source_after_import'] = bool(config.get('delete_source_after_import', False))
 
         storage_candidate = config.get('storage_path')
         if not storage_candidate:
@@ -1968,6 +2022,13 @@ class MainWindow(QMainWindow):
             self._update_storage_path(storage_path)
         else:
             self.models_root = self._resolve_models_root()
+
+        delete_sources = bool(self.config.get('delete_source_after_import', False))
+        if delete_sources:
+            model_sources = list(result.get('source_model_paths', []) or [])
+            gcode_sources = list(result.get('source_gcode_paths', []) or [])
+            paths_to_remove = [os.path.abspath(path) for path in (*model_sources, *gcode_sources) if path]
+            self._remove_original_files(paths_to_remove)
         self.reload_files()
 
     def view_model(self, model_data: dict):

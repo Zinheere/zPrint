@@ -51,6 +51,41 @@ QComboBox QAbstractItemView {
   outline: 0;
 }
 
+QCheckBox {
+  spacing: 8px;
+}
+
+QCheckBox::indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid #4b4f51;
+  background: #2f3335;
+}
+
+QCheckBox::indicator:hover {
+  border-color: #5c6062;
+}
+
+QCheckBox::indicator:checked {
+  background-color: #007AFF;
+  border-color: #0070E0;
+  image: url(:/qt-project.org/styles/commonstyle/images/checkbox_checked.png);
+}
+
+QCheckBox::indicator:unchecked {
+  image: none;
+}
+
+QCheckBox::indicator:indeterminate {
+  image: url(:/qt-project.org/styles/commonstyle/images/checkbox_partiallychecked.png);
+}
+
+QCheckBox::indicator:disabled {
+  background: #2b2f31;
+  border-color: #3b3f41;
+}
+
 /* Primary action styling: use same blue for contrast on dark.
    Buttons remain colored to be visible on dark backgrounds. */
 /* Default button style - neutral on dark background */

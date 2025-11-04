@@ -37,6 +37,10 @@ for folder in ('assets', 'ui'):
     if os.path.isdir(src):
         datas.append((src, folder))
 
+readme_src = os.path.join(PROJECT_ROOT, 'README.md')
+if os.path.isfile(readme_src):
+    datas.append((readme_src, '.'))
+
 try:
     binaries.extend(collect_dynamic_libs('vispy'))
 except Exception:

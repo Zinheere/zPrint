@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
+from core.gcode_metadata import extract_metadata_from_gcode
 from core.stl_preview import render_stl_preview
 from ui.generated.new_model_dialog_ui import Ui_NewModelDialog
 
@@ -287,6 +288,14 @@ class NewModelDialog(QDialog):
     def _append_gcode_row(self, path: str, material: str = "", colour: str = "", print_time: str = "") -> None:
         if not self.gcode_table:
             return
+        file_metadata = extract_metadata_from_gcode(path)
+        if file_metadata.get("print_time"):
+            print_time = file_metadata["print_time"]
+        if file_metadata.get("material"):
+            material = file_metadata["material"]
+        if file_metadata.get("colour"):
+            colour = file_metadata["colour"]
+
         parsed = self._parse_gcode_filename(path)
         if parsed.get("name") and self.name_edit and not self.name_edit.text().strip():
             self.name_edit.setText(parsed["name"])
@@ -296,6 +305,7 @@ class NewModelDialog(QDialog):
             colour = parsed["colour"]
         if not print_time and parsed.get("print_time"):
             print_time = parsed["print_time"]
+
         row = self.gcode_table.rowCount()
         self.gcode_table.insertRow(row)
         file_item = QTableWidgetItem(os.path.basename(path))
@@ -406,6 +416,8 @@ class NewModelDialog(QDialog):
 
         os.makedirs(model_dir, exist_ok=False)
         created_paths = []
+        source_model_paths = [os.path.abspath(path) for path in data["model_paths"] if path]
+        source_gcode_paths: list[str] = []
         try:
             model_files = []
             for index, source_path in enumerate(data["model_paths"]):
@@ -425,6 +437,7 @@ class NewModelDialog(QDialog):
                 source = entry.get("source")
                 if not source or not os.path.isfile(source):
                     continue
+                source_gcode_paths.append(os.path.abspath(source))
                 dest_file = os.path.join(model_dir, os.path.basename(source))
                 shutil.copy2(source, dest_file)
                 created_paths.append(dest_file)
@@ -476,6 +489,8 @@ class NewModelDialog(QDialog):
         return {
             "folder_path": model_dir,
             "storage_path": dest_root,
+            "source_model_paths": source_model_paths,
+            "source_gcode_paths": source_gcode_paths,
         }
 
     def _parse_gcode_filename(self, path: str) -> dict:

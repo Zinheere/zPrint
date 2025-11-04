@@ -2,12 +2,14 @@
 
 ## Backlog:
 
+- [x] add an option into settings where users can check whether or not they want files to delete from their original location after the model has been added to the zprint location
+
 0.5.0 main features:
 - [x] About dialog in the top menu
 - [ ] Auto-create models from unsorted G-code and model files (Import button)
-- [ ] G-code preview button in the 3D preview dialog (3D view)
-- [ ] Menu bar (Windows text-only style)
+- [x] G-code preview button in the 3D preview dialog (3D view)
 - [x] Settings page to change storage location (automoves file)
+- [ ] Extented model property data extraction
 
 ## Completed
 - [x] Support alternate STL/3MF files

@@ -52,6 +52,41 @@ QComboBox QAbstractItemView {
   outline: 0;
 }
 
+QCheckBox {
+  spacing: 8px;
+}
+
+QCheckBox::indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid #D0D6DE;
+  background: #FFFFFF;
+}
+
+QCheckBox::indicator:hover {
+  border-color: #B8C2CE;
+}
+
+QCheckBox::indicator:checked {
+  background-color: #007AFF;
+  border-color: #005FCC;
+  image: url(:/qt-project.org/styles/commonstyle/images/checkbox_checked.png);
+}
+
+QCheckBox::indicator:unchecked {
+  image: none;
+}
+
+QCheckBox::indicator:indeterminate {
+  image: url(:/qt-project.org/styles/commonstyle/images/checkbox_partiallychecked.png);
+}
+
+QCheckBox::indicator:disabled {
+  background: #EDEFF2;
+  border-color: #D0D6DE;
+}
+
 /* Primary action styling */
 /* Default button style - neutral (not all buttons should be CTA blue)
    We'll override specific buttons (like btnAddModel) to be the primary CTA. */

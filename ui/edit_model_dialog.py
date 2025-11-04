@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.gcode_metadata import extract_metadata_from_gcode
 from core.stl_preview import render_stl_preview
 
 
@@ -481,7 +482,21 @@ class EditModelDialog(QDialog):
             if not os.path.isfile(path):
                 continue
             basename = os.path.basename(path)
-            material, colour, print_time = self._parse_gcode_filename(basename)
+            file_metadata = extract_metadata_from_gcode(path)
+            if file_metadata.get("print_time"):
+                print_time = file_metadata["print_time"]
+            if file_metadata.get("material"):
+                material = file_metadata["material"]
+            if file_metadata.get("colour"):
+                colour = file_metadata["colour"]
+
+            fallback_material, fallback_colour, fallback_time = self._parse_gcode_filename(basename)
+            if not material and fallback_material:
+                material = fallback_material
+            if not colour and fallback_colour:
+                colour = fallback_colour
+            if not print_time and fallback_time:
+                print_time = fallback_time
             row = self.gcode_table.rowCount()
             self.gcode_table.insertRow(row)
 
