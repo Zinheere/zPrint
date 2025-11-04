@@ -1,26 +1,15 @@
 # zPrint
 
-> ## Streamlined model viewer &amp; print file organiser
+> Streamlined model viewer &amp; print file organiser
 
 *Work in progress*
 
-**Current:** 0.4.0 – Official release
+**Current:** 0.4.0 – *Official release*
 
-### Installer Status
+## Installer
 
 - ✅ The signed Windows installer is ready at [releases](https://github.com/Zinheere/zPrint/releases). Run it to install zPrint with shortcuts and file associations.
 - Prefer a portable build? Use the self-contained folder in `dist\zPrint\`.
-
-## Release Notes
-
-### 0.4.0 (2025-11-04)
-
-- Tuned the VisPy-powered 3D viewer for smooth orbit, pan, and zoom across large STL and 3MF models, including graceful fallbacks when meshes fail to process.
-- Expanded the Edit Model dialog with a Regenerate Preview button, richer metadata validation, and one-click G-code management (add, remove, copy, delete).
-- Added a first-launch welcome prompt to guide storage location selection and default theme setup.
-- Added determinate progress overlays around gallery refreshes and preview generation so the window stays responsive during heavy work.
-- Persisted theme selection and default storage mode immediately and enlarged the default main window to 1280×900 for better first-run ergonomics.
-- Hardened 3MF preview generation and packaging by bundling SciPy, networkx, and lxml along with the VisPy runtime, ensuring the standalone build and installer ship all viewer dependencies.
 
 ## Using zPrint
 
@@ -50,6 +39,17 @@
 
 - Copy, remove, or replace associated G-code directly from the Edit dialog without leaving the app.
 - The gallery shows determinate progress overlays during heavy operations so the window stays responsive.
+
+## Release Notes
+
+### 0.4.0 (2025-11-04)
+
+- Tuned the VisPy-powered 3D viewer for smooth orbit, pan, and zoom across large STL and 3MF models, including graceful fallbacks when meshes fail to process.
+- Expanded the Edit Model dialog with a Regenerate Preview button, richer metadata validation, and one-click G-code management (add, remove, copy, delete).
+- Added a first-launch welcome prompt to guide storage location selection and default theme setup.
+- Added determinate progress overlays around gallery refreshes and preview generation so the window stays responsive during heavy work.
+- Persisted theme selection and default storage mode immediately and enlarged the default main window to 1280×900 for better first-run ergonomics.
+- Hardened 3MF preview generation and packaging by bundling SciPy, networkx, and lxml along with the VisPy runtime, ensuring the standalone build and installer ship all viewer dependencies.
 
 ## Building
 
