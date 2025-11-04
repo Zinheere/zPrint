@@ -2,7 +2,7 @@
 
 > ### Streamlined print file organiser &amp; model gallery
 
-**Current:** 0.4.1 – Top menu
+**Current:** 0.4.1 – *Top menu integration*
 
 ## ⬇️ Install ⬇️
 
