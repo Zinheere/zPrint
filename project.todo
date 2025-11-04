@@ -44,6 +44,13 @@
 - [x] Package Windows release (PyInstaller bundle + Inno Setup installer)
 
 ## Release Notes
+### 0.4.2 (2025-11-04)
+
+- Added an interactive G-code toolpath preview with enhanced lighting and shadow controls.
+- Parsed slicer metadata from G-code files, separating colour from material names and formatting print time to minutes.
+- Added a storage preference that deletes original files after import with persisted configuration.
+- Styled checkbox indicators across themes so toggles remain visible in light and dark modes.
+
 ### 0.4.1 (2025-11-04)
 
 - Added Windows-style menu bar entries for About, Help, and Storage Settings.

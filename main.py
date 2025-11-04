@@ -39,7 +39,7 @@ from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
 from ui.welcome_dialog import WelcomeDialog
 
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.4.2"
 
 
 class StorageSettingsDialog(QDialog):

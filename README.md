@@ -2,7 +2,7 @@
 
 > ### Streamlined print file organiser &amp; model gallery
 
-**Current:** 0.4.1 – *Top menu integration*
+**Current:** 0.4.2 – *G-code preview & metadata*
 
 ## ⬇️ Install ⬇️
 
@@ -41,13 +41,12 @@
 
 ## Release Notes
 
-### 0.4.1 (2025-11-04)
+### 0.4.2 (2025-11-04)
 
-- Introduced a Windows-style menu bar with About, Help instructions, and a Storage Settings workflow.
-- Added a Markdown-driven help dialog that surfaces the “Using zPrint” documentation directly in the app.
-- Implemented a storage relocation tool that moves the existing model library when switching folders.
-- Tuned the theme toggle and top-bar buttons to scale icons with window size and keep columns evenly spaced.
-- Normalised gallery column widths so cards align cleanly at any window size.
+- Added an interactive G-code toolpath preview inside the 3D viewer with improved lighting and shadows for clearer layer inspection.
+- Extracted slicer-supplied material, colour, and print time metadata directly from G-code comments, normalising colour labels and trimming print durations to minutes.
+- Introduced a storage setting to automatically delete source files after import, persisting the preference in the app configuration.
+- Brought the light and dark themes to parity with styled checkbox indicators so toggles remain visible across both modes.
 
 ## Building
 
