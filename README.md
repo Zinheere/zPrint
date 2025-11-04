@@ -6,7 +6,7 @@
 
 ## ⬇️ Install ⬇️
 
-### ✅ DOWNLOAD INSTALLER FROM __[RELEASES](https://github.com/Zinheere/zPrint/releases/latest)__
+### ✅ DOWNLOAD INSTALLER FROM [RELEASES](https://github.com/Zinheere/zPrint/releases/latest)
 - Run it to install zPrint with shortcuts and file associations.
 - Prefer a portable build? Use the self-contained folder in `dist\zPrint\`.
 
