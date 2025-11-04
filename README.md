@@ -2,7 +2,7 @@
 
 > ### Streamlined print file organiser &amp; model gallery
 
-**Current:** 0.4.0 – *Official release*
+**Current:** 0.4.1 – *Official release*
 
 ## Installer
 
@@ -39,6 +39,14 @@
 - The gallery shows determinate progress overlays during heavy operations so the window stays responsive.
 
 ## Release Notes
+
+### 0.4.1 (2025-11-04)
+
+- Introduced a Windows-style menu bar with About, Help instructions, and a Storage Settings workflow.
+- Added a Markdown-driven help dialog that surfaces the “Using zPrint” documentation directly in the app.
+- Implemented a storage relocation tool that moves the existing model library when switching folders.
+- Tuned the theme toggle and top-bar buttons to scale icons with window size and keep columns evenly spaced.
+- Normalised gallery column widths so cards align cleanly at any window size.
 
 ### 0.4.0 (2025-11-04)
 

@@ -1,23 +1,19 @@
 # Project TODO
 
+## Backlog:
+
 0.5.0 main features:
 - [x] About dialog in the top menu
 - [ ] Auto-create models from unsorted G-code and model files (Import button)
-- [x] Eject SD card option when storage lives on an SD drive
 - [ ] G-code preview button in the 3D preview dialog (3D view)
 - [ ] Menu bar (Windows text-only style)
-- [ ] Settings page to change storage location and move files
-- [ ] Support alternate STL/3MF files
-
-
-0.4.0 main features:
-more file management improvments
-- [x] can select models to be "active" which places a copy of the gcode in the root directory of the storage location
-- [x] remove microsd/local mode, microsd use can just be selecting a different drive, add a "drive not found" alert if microsd is not inserted
-
-## Backlog
+- [x] Settings page to change storage location (automoves file)
 
 ## Completed
+- [x] Support alternate STL/3MF files
+- [x] can select models to be "active" which places a copy of the gcode in the root directory of the storage location
+- [x] remove microsd/local mode, microsd use can just be selecting a different drive, add a "drive not found" alert if microsd is not inserted
+- [x] Eject SD card option when storage lives on an SD drive
 - [x] Ignore the test config.json from packaging
 - [x] Import and implement new icons (0.40)
 - [x] update program to reflect v0.030
@@ -46,6 +42,13 @@ more file management improvments
 - [x] Package Windows release (PyInstaller bundle + Inno Setup installer)
 
 ## Release Notes
+### 0.4.1 (2025-11-04)
+
+- Added Windows-style menu bar entries for About, Help, and Storage Settings.
+- Surfaced README instructions through a Markdown-rendered help dialog.
+- Enabled relocating the models library with automatic file moves to the new storage path.
+- Improved theme toggle scaling and equalised gallery column widths for consistent layout.
+
 ### 0.4.0 (2025-11-04)
 
 - Consolidated storage configuration around a single `storage_path`, migrating legacy settings and prompting when removable drives are missing.
@@ -67,7 +70,7 @@ more file management improvments
 ### 0.20 beta (2025-11-03)
 - Added 3MF support across gallery thumbnails and interactive viewer.
 - Upgraded STL viewer dialog to VisPy for responsive, GPU-accelerated interaction.
-- Config saved under `%APPDATA%\zPrint` with document-root fallback.
+- Config saved under `%APPDATA%\\zPrint` with document-root fallback.
 - Import flow supports creating new model folders and updates gallery empty state.
 - Added Windows build pipeline: PyInstaller spec, release script, and Inno Setup installer.
 - Embedded official logo into executable, installer, and shortcuts.

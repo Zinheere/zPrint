@@ -129,6 +129,7 @@
             <property name="title">
              <string>&amp;File</string>
             </property>
+            <addaction name="actionSettings"/>
             <addaction name="actionExit"/>
          </widget>
          <widget class="QMenu" name="menuHelp">
@@ -158,6 +159,17 @@
          </property>
          <property name="menuRole">
             <enum>QAction::QuitRole</enum>
+         </property>
+        </action>
+   <action name="actionSettings">
+    <property name="text">
+     <string>Storage Settings…</string>
+    </property>
+         <property name="shortcut">
+          <string>Ctrl+Shift+S</string>
+         </property>
+         <property name="menuRole">
+          <enum>QAction::PreferencesRole</enum>
          </property>
         </action>
         <action name="actionHelpContents">

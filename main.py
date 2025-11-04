@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QInputDialog,
     QPushButton,
+    QLineEdit,
     QVBoxLayout,
     QHBoxLayout,
     QGridLayout,
@@ -37,7 +38,55 @@ from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
 from ui.welcome_dialog import WelcomeDialog
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
+
+
+class StorageSettingsDialog(QDialog):
+    def __init__(self, current_path: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle('Storage Settings')
+        self.setModal(True)
+        self.setMinimumWidth(480)
+        resolved_current = os.path.expandvars(os.path.expanduser(str(current_path or '')))
+        self._current_path = os.path.abspath(resolved_current) if resolved_current else ''
+        self._chosen_path = self._current_path
+
+        layout = QVBoxLayout(self)
+        description = QLabel('Manage the folder where zPrint stores your models and G-code files.')
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        path_row = QHBoxLayout()
+        self.path_edit = QLineEdit(self._current_path)
+        self.path_edit.setReadOnly(True)
+        path_row.addWidget(self.path_edit)
+        browse_btn = QPushButton('Browse…')
+        browse_btn.clicked.connect(self._browse_for_folder)
+        path_row.addWidget(browse_btn)
+        layout.addLayout(path_row)
+
+        hint = QLabel('When you save, zPrint moves your existing library to the selected folder.')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _browse_for_folder(self) -> None:
+        start_dir = self._chosen_path if self._chosen_path and os.path.isdir(self._chosen_path) else os.path.expanduser('~')
+        chosen = QFileDialog.getExistingDirectory(self, 'Choose Models Folder', start_dir)
+        if not chosen:
+            return
+        chosen = os.path.abspath(os.path.expandvars(os.path.expanduser(str(chosen))))
+        self._chosen_path = chosen
+        self.path_edit.setText(chosen)
+
+    @property
+    def selected_path(self) -> str:
+        return self._chosen_path
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -80,6 +129,7 @@ class MainWindow(QMainWindow):
         self.card_headers = []
         self.card_subtexts = []
         self.cards = []
+        self._last_gallery_cols = 0
         self._models = []
         self._visible_models = []
         self._preview_cache = {}
@@ -151,12 +201,15 @@ class MainWindow(QMainWindow):
         about_action = resolve_action('actionAbout')
         exit_action = resolve_action('actionExit')
         help_action = resolve_action('actionHelpContents')
+        settings_action = resolve_action('actionSettings')
         if about_action is not None:
             about_action.triggered.connect(self._show_about_dialog)
         if exit_action is not None:
             exit_action.triggered.connect(self.close)
         if help_action is not None:
             help_action.triggered.connect(self._show_help_dialog)
+        if settings_action is not None:
+            settings_action.triggered.connect(self._show_settings_dialog)
 
         # Access top bar buttons by object name (use findChild because loader returned
         # a separate object rather than attaching attributes to this instance)
@@ -311,6 +364,126 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         dialog.exec()
+
+    def _show_settings_dialog(self) -> None:
+        current_raw = self.config.get('storage_path') or self.models_root or self._default_models_directory()
+        current_raw = os.path.expandvars(os.path.expanduser(str(current_raw or '')))
+        current_path = os.path.abspath(current_raw) if current_raw else ''
+        dialog = StorageSettingsDialog(current_path, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        new_path = dialog.selected_path
+        if not new_path:
+            return
+        if os.path.abspath(new_path) == current_path:
+            return
+        self._apply_storage_location_change(new_path)
+
+    def _apply_storage_location_change(self, new_path: str) -> None:
+        current_raw = str(self.models_root) if getattr(self, 'models_root', None) else ''
+        current_raw = os.path.expandvars(os.path.expanduser(current_raw)) if current_raw else ''
+        current_path = os.path.abspath(current_raw) if current_raw else ''
+        target_raw = os.path.expandvars(os.path.expanduser(str(new_path or '')))
+        target_path = os.path.abspath(target_raw) if target_raw else ''
+        if not target_path:
+            return
+        if current_path and os.path.exists(current_path):
+            try:
+                if os.path.samefile(current_path, target_path):
+                    return
+            except Exception:
+                pass
+        try:
+            paths_for_common = [os.path.abspath(p) for p in (current_path, target_path) if p]
+            common = os.path.commonpath(paths_for_common) if paths_for_common else ''
+        except ValueError:
+            common = ''
+        if current_path and common == os.path.abspath(current_path):
+            QMessageBox.warning(self, 'Storage Settings', 'Choose a folder outside of the current models directory.')
+            return
+        if os.path.exists(target_path) and not os.path.isdir(target_path):
+            QMessageBox.warning(self, 'Storage Settings', 'The selected location is not a folder.')
+            return
+        if os.path.isdir(target_path):
+            try:
+                target_same = os.path.exists(current_path) and os.path.samefile(current_path, target_path)
+            except Exception:
+                target_same = False
+            if target_same:
+                return
+            existing = [item for item in os.listdir(target_path)]
+            if existing:
+                merge_prompt = QMessageBox(self)
+                merge_prompt.setIcon(QMessageBox.Warning)
+                merge_prompt.setWindowTitle('Storage Settings')
+                merge_prompt.setText('The destination folder is not empty.')
+                merge_prompt.setInformativeText('zPrint will merge files and replace duplicates in the selected location.')
+                merge_prompt.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+                merge_prompt.setDefaultButton(QMessageBox.Ok)
+                if merge_prompt.exec() != QMessageBox.Ok:
+                    return
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Question)
+        confirm.setWindowTitle('Move Storage Location')
+        confirm.setText('Move your existing library to the new folder?')
+        confirm.setInformativeText(f'Current:\n{current_path or "(not set)"}\n\nNew:\n{target_path}')
+        confirm.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        confirm.setDefaultButton(QMessageBox.Ok)
+        if confirm.exec() != QMessageBox.Ok:
+            return
+        if not self._move_storage_contents(current_path, target_path):
+            return
+        self._update_storage_path(target_path)
+        self.reload_files()
+        QMessageBox.information(self, 'Storage Settings', f'Model library moved to:\n{target_path}')
+
+    def _move_storage_contents(self, source: str, target: str) -> bool:
+        source_raw = os.path.expandvars(os.path.expanduser(str(source or '')))
+        target_raw = os.path.expandvars(os.path.expanduser(str(target or '')))
+        source = os.path.abspath(source_raw) if source_raw else ''
+        target = os.path.abspath(target_raw) if target_raw else ''
+        if source and os.path.exists(source):
+            try:
+                if os.path.samefile(source, target):
+                    return True
+            except Exception:
+                pass
+        self._show_loading('Moving models library…')
+        QApplication.processEvents(QEventLoop.AllEvents, 1)
+        try:
+            if source and os.path.isdir(source):
+                if not os.path.exists(target):
+                    parent = os.path.dirname(target)
+                    if parent and not os.path.exists(parent):
+                        os.makedirs(parent, exist_ok=True)
+                    shutil.move(source, target)
+                else:
+                    os.makedirs(target, exist_ok=True)
+                    entries = os.listdir(source)
+                    for name in entries:
+                        src_path = os.path.join(source, name)
+                        dest_path = os.path.join(target, name)
+                        if os.path.exists(dest_path):
+                            try:
+                                if os.path.isdir(dest_path) and not os.path.islink(dest_path):
+                                    shutil.rmtree(dest_path)
+                                else:
+                                    os.remove(dest_path)
+                            except Exception:
+                                pass
+                        shutil.move(src_path, dest_path)
+                    try:
+                        os.rmdir(source)
+                    except Exception:
+                        pass
+            else:
+                os.makedirs(target, exist_ok=True)
+            return True
+        except Exception as exc:
+            QMessageBox.critical(self, 'Storage Settings', f'Unable to move files:\n{exc}')
+            return False
+        finally:
+            self._hide_loading()
 
     def _build_help_content(self) -> tuple[str | None, str]:
         readme_path = os.path.join(self.app_dir, 'README.md')
@@ -1131,7 +1304,7 @@ class MainWindow(QMainWindow):
         total = len(models)
         for model in models:
             card = QWidget()
-            card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             card.setMinimumSize(QSize(260, 340))
             layout = QVBoxLayout(card)
             layout.setContentsMargins(5, 5, 5, 5)
@@ -2038,6 +2211,13 @@ class MainWindow(QMainWindow):
         min_card_w = 240
         cols = max(2, int((available_w + spacing) / (min_card_w + spacing)))
         cols = min(cols, 3)
+
+        # Ensure each active column shares the same stretch so widths stay uniform
+        last_cols = max(cols, getattr(self, '_last_gallery_cols', 0))
+        for col in range(last_cols):
+            layout.setColumnStretch(col, 1 if col < cols else 0)
+
+        self._last_gallery_cols = cols
 
         # Clear current layout placements (but keep widgets alive)
         try:
