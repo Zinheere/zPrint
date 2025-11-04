@@ -33,7 +33,7 @@ from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
 from ui.welcome_dialog import WelcomeDialog
 
-APP_VERSION = "0.30 beta"
+APP_VERSION = "0.4.0"
 
 class MainWindow(QMainWindow):
     def __init__(self):

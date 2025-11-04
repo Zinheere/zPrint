@@ -1,6 +1,6 @@
 # Project TODO
 
-0.50 main features:
+0.5.0 main features:
 - [ ] autocreate models using unsorted gcode and model files (under "import button")
 - [ ] add support for alternate stl/3mf files
 - [ ] add an eject sd card if files are stored in sd
@@ -10,7 +10,7 @@
  about page 
 
 
-0.40 main features:
+0.4.0 main features:
 more file management improvments
 - [ ] can select models to be "active" which places a copy of the gcode in the root directory of the storage location
 - [ ] remove microsd/local mode, microsd use can just be selecting a different drive, add a "drive not found" alert if microsd is not inserted

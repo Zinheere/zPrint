@@ -4,16 +4,16 @@
 
 *Work in progress*
 
-**Current:** 0.30 beta – Official release
+**Current:** 0.4.0 – Official release
 
 ### Installer Status
 
-- ✅ The signed Windows installer is ready at `dist\installer\zPrint-Setup.exe`. Run it to deploy zPrint with shortcuts and file associations.
+- ✅ The signed Windows installer is ready at [releases](https://github.com/Zinheere/zPrint/releases). Run it to install zPrint with shortcuts and file associations.
 - Prefer a portable build? Use the self-contained folder in `dist\zPrint\`.
 
 ## Release Notes
 
-### 0.30 beta (2025-11-04)
+### 0.4.0 (2025-11-04)
 
 - Tuned the VisPy-powered 3D viewer for smooth orbit, pan, and zoom across large STL and 3MF models, including graceful fallbacks when meshes fail to process.
 - Expanded the Edit Model dialog with a Regenerate Preview button, richer metadata validation, and one-click G-code management (add, remove, copy, delete).
