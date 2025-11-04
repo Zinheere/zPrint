@@ -129,6 +129,10 @@ class EditModelDialog(QDialog):
 
         controls = QHBoxLayout()
         self.delete_button = QPushButton("Delete Model…", self)
+        self.delete_button.setStyleSheet(
+            "QPushButton { background-color: #FF3B30; color: #ffffff; font-weight: 600; padding: 6px 12px; border-radius: 6px; } "
+            "QPushButton:pressed { background-color: #FF3B30; }"
+        )
         controls.addWidget(self.delete_button)
         controls.addStretch(1)
         layout.addLayout(controls)

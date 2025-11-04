@@ -28,6 +28,7 @@ from PySide6.QtGui import QIcon, QFont, QPixmap
 
 from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
+from core.active_manager import ActiveModelError, set_model_active
 from ui.new_model_dialog import NewModelDialog
 from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
@@ -43,10 +44,16 @@ class MainWindow(QMainWindow):
         self._config_dir = self._determine_config_dir()
         self._config_path = os.path.join(self._config_dir, 'config.json')
         self.config = self._load_config()
+        self._storage_drive_missing = False
+        self._shown_storage_missing_prompt = False
         mode_theme = self.config.get('theme', 'light').lower()
         self.dark_theme = mode_theme == 'dark'
         self.models_root = self._resolve_models_root()
         self._icons_dir = os.path.join(self.app_dir, 'assets', 'icons')
+        self._active_icon_cache = {}
+        self._top_bar_layout = None
+        self._top_bar_widget = None
+        self._btn_eject_storage = None
         # track widgets/actions that need tinted icons reapplied on theme/resize
         self._icon_targets = []  # entries: {'kind': 'button'|'action', 'widget': QWidget, 'action': QAction|None, 'path': str}
         self.search_box = None
@@ -63,6 +70,7 @@ class MainWindow(QMainWindow):
             return
         # apply the chosen theme immediately on startup
         self.apply_theme(self.dark_theme)
+        self._prompt_missing_storage_if_needed()
         # ensure the window opens at a comfortable working size
         self.resize(1280, 900)
         # tracked card header labels for dynamic font resizing
@@ -154,6 +162,8 @@ class MainWindow(QMainWindow):
                 top_bar_layout = QHBoxLayout(top_bar)
                 top_bar_layout.setContentsMargins(6, 6, 6, 6)
                 top_bar_layout.setSpacing(6)
+                self._top_bar_layout = top_bar_layout
+                self._top_bar_widget = top_bar
                 # add known buttons into the new layout in order
                 for name in ('btnThemeToggle', 'btnReload', 'btnImport', 'btnAddModel'):
                     w = self.findChild(QPushButton, name) or (self.ui and self.ui.findChild(QPushButton, name))
@@ -168,6 +178,8 @@ class MainWindow(QMainWindow):
 
         # apply an initial sizing pass for the top bar buttons
         self._resize_top_buttons(initial=True)
+
+        self._refresh_eject_button()
 
         # Prepare references to inputs on the second top bar for resizing
         self.top_bar_inputs = []
@@ -263,6 +275,7 @@ class MainWindow(QMainWindow):
                     f.setBold(True)
                 else:
                     f.setBold(False)
+                btn.setProperty('topBarButton', True)
                 btn.setFont(f)
                 # Adjust icon size for icon-bearing buttons (only if explicitly set)
                 if not btn.icon().isNull():
@@ -359,6 +372,227 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _storage_drive_letter(self) -> str | None:
+        path = getattr(self, 'models_root', None) or self.config.get('storage_path') or ''
+        if not path:
+            return None
+        try:
+            expanded = os.path.abspath(os.path.expandvars(os.path.expanduser(str(path))))
+        except Exception:
+            expanded = str(path)
+        drive, _ = os.path.splitdrive(expanded)
+        return drive or None
+
+    def _is_storage_drive_removable(self) -> bool:
+        drive = self._storage_drive_letter()
+        if not drive:
+            return False
+        if os.name != 'nt':
+            return False
+        drive_root = drive + os.sep
+        if not os.path.exists(drive_root):
+            return False
+        try:
+            import ctypes  # type: ignore
+            DRIVE_REMOVABLE = 2
+            dtype = ctypes.windll.kernel32.GetDriveTypeW(ctypes.c_wchar_p(drive_root))  # type: ignore[attr-defined]
+            return dtype == DRIVE_REMOVABLE
+        except Exception:
+            return False
+
+    def _refresh_eject_button(self) -> None:
+        layout = getattr(self, '_top_bar_layout', None)
+        if layout is None:
+            return
+        should_show = self._is_storage_drive_removable() and not getattr(self, '_storage_drive_missing', False)
+        btn = getattr(self, '_btn_eject_storage', None)
+        if should_show:
+            if btn is None:
+                btn = QPushButton('Eject SD', self)
+                btn.setObjectName('btnEjectStorage')
+                btn.setToolTip('Safely eject the configured storage drive')
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                btn.installEventFilter(self)
+                btn.clicked.connect(self._on_eject_storage_clicked)
+                if self._top_bar_widget is not None:
+                    btn.setParent(self._top_bar_widget)
+                self._register_icon(btn, ('eject.svg', 'sdcard.svg', 'remove.svg', 'delete.svg'))
+                self._btn_eject_storage = btn
+                if not hasattr(self, 'top_bar_buttons') or self.top_bar_buttons is None:
+                    self.top_bar_buttons = []
+                if btn not in self.top_bar_buttons:
+                    self.top_bar_buttons.append(btn)
+                insert_index = -1
+                if hasattr(self, '_btn_add_model') and getattr(self, '_btn_add_model', None) is not None:
+                    try:
+                        insert_index = layout.indexOf(self._btn_add_model)  # type: ignore[arg-type]
+                    except Exception:
+                        insert_index = -1
+                if insert_index is not None and insert_index >= 0:
+                    layout.insertWidget(insert_index, btn)
+                else:
+                    layout.addWidget(btn)
+            else:
+                btn.setEnabled(True)
+        else:
+            if btn is not None:
+                if layout is not None:
+                    layout.removeWidget(btn)
+                if hasattr(self, 'top_bar_buttons') and btn in self.top_bar_buttons:
+                    self.top_bar_buttons.remove(btn)
+                self._icon_targets = [t for t in self._icon_targets if t.get('widget') is not btn]
+                btn.removeEventFilter(self)
+                btn.deleteLater()
+                self._btn_eject_storage = None
+        try:
+            self._resize_top_buttons()
+        except Exception:
+            pass
+
+    def _on_eject_storage_clicked(self) -> None:
+        drive = self._storage_drive_letter()
+        if not drive:
+            QMessageBox.information(self, 'Eject Storage', 'The current storage location is not on a removable drive.')
+            return
+        drive_label = drive.upper()
+        question = QMessageBox.question(
+            self,
+            'Eject Storage',
+            f'Eject {drive_label} so the SD card can be safely removed?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if question != QMessageBox.Yes:
+            return
+        btn = getattr(self, '_btn_eject_storage', None)
+        if btn is not None:
+            btn.setEnabled(False)
+        success, error = self._eject_storage_drive(drive_label)
+        if not success:
+            if btn is not None:
+                btn.setEnabled(True)
+            QMessageBox.critical(self, 'Eject Storage', error or 'Unable to eject the storage drive.')
+            return
+        QMessageBox.information(self, 'Eject Storage', f'{drive_label} has been ejected. You may now remove the SD card.')
+        self._storage_drive_missing = True
+        self.models_root = self._resolve_models_root()
+        self._shown_storage_missing_prompt = False
+        self._refresh_eject_button()
+        self._prompt_missing_storage_if_needed()
+        self.reload_files()
+
+    def _eject_storage_drive(self, drive: str) -> tuple[bool, str]:
+        """Attempt to eject a removable drive using Windows DeviceIoControl."""
+        if os.name != 'nt':
+            return False, 'Ejecting storage is only supported on Windows.'
+
+        drive_text = (drive or '').strip().upper()
+        if not drive_text:
+            return False, 'No drive letter specified.'
+
+        if len(drive_text) == 1:
+            drive_letter = f'{drive_text}:'
+        elif len(drive_text) >= 2 and drive_text[1] == ':':
+            drive_letter = drive_text[:2]
+        else:
+            return False, f'Invalid drive identifier: {drive_text}'
+
+        drive_root = drive_letter + os.sep
+        if not os.path.exists(drive_root):
+            return False, f'{drive_letter} is not currently available.'
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+        except Exception as exc:
+            return False, f'ctypes is required to eject the drive: {exc}'
+
+        GENERIC_READ = 0x80000000
+        GENERIC_WRITE = 0x40000000
+        FILE_SHARE_READ = 0x00000001
+        FILE_SHARE_WRITE = 0x00000002
+        OPEN_EXISTING = 3
+        IOCTL_STORAGE_MEDIA_REMOVAL = 0x002D4804
+        IOCTL_STORAGE_EJECT_MEDIA = 0x002D4808
+        INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
+
+        class PREVENT_MEDIA_REMOVAL(ctypes.Structure):
+            _fields_ = [('PreventMediaRemoval', ctypes.c_byte)]
+
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
+        CreateFileW = kernel32.CreateFileW
+        CreateFileW.argtypes = (
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        )
+        CreateFileW.restype = wintypes.HANDLE
+
+        DeviceIoControl = kernel32.DeviceIoControl
+        DeviceIoControl.argtypes = (
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+            wintypes.LPVOID,
+        )
+        DeviceIoControl.restype = wintypes.BOOL
+
+        CloseHandle = kernel32.CloseHandle
+        CloseHandle.argtypes = (wintypes.HANDLE,)
+        CloseHandle.restype = wintypes.BOOL
+
+        drive_path = f'\\\\.\\{drive_letter}'
+
+        def _open_handle(access: int) -> int:
+            return CreateFileW(
+                drive_path,
+                access,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                None,
+                OPEN_EXISTING,
+                0,
+                None,
+            )
+
+        handle = _open_handle(GENERIC_READ | GENERIC_WRITE)
+        if handle == INVALID_HANDLE_VALUE:
+            handle = _open_handle(GENERIC_READ)
+        if handle == INVALID_HANDLE_VALUE:
+            error = ctypes.get_last_error()
+            return False, f'Unable to access {drive_letter} (error {error}). Close open files and try again.'
+
+        try:
+            returned = wintypes.DWORD(0)
+            pmr = PREVENT_MEDIA_REMOVAL(False)
+            DeviceIoControl(handle, IOCTL_STORAGE_MEDIA_REMOVAL, ctypes.byref(pmr), ctypes.sizeof(pmr), None, 0, ctypes.byref(returned), None)
+
+            success = DeviceIoControl(handle, IOCTL_STORAGE_EJECT_MEDIA, None, 0, None, 0, ctypes.byref(returned), None)
+            if not success:
+                error = ctypes.get_last_error()
+                if error == 5:
+                    message = 'Access denied while ejecting the drive.'
+                elif error in (21, 32):
+                    message = 'The drive is in use. Close any open files and try again.'
+                else:
+                    message = f'Unable to eject {drive_letter} (error {error}).'
+                return False, message
+        finally:
+            try:
+                CloseHandle(handle)
+            except Exception:
+                pass
+
+        return True, ''
+
     def _tint_icon(self, path: str, hex_colour: str, size: QSize | None = None) -> QIcon:
         """Render an SVG (or image) and tint to hex_colour. Uses QSvgRenderer if available."""
         try:
@@ -386,9 +620,7 @@ class MainWindow(QMainWindow):
         if not getattr(self, '_config_path', None):
             self._config_path = os.path.join(self._determine_config_dir(), 'config.json')
         defaults = {
-            'mode': 'local',
-            'local_path': self._default_models_directory(),
-            'microsd_path': '',
+            'storage_path': self._default_models_directory(),
             'theme': 'light',
             'welcome_completed': False,
         }
@@ -409,19 +641,32 @@ class MainWindow(QMainWindow):
                     data = {}
         config = defaults.copy()
         config.update(data)
-        if not config.get('local_path'):
-            config['local_path'] = self._default_models_directory()
-        if 'microsd_path' not in config:
-            config['microsd_path'] = ''
-        for key in ('local_path', 'microsd_path'):
-            value = config.get(key)
-            if value:
-                config[key] = os.path.abspath(os.path.expanduser(os.path.expandvars(str(value))))
+
+        storage_candidate = config.get('storage_path')
+        if not storage_candidate:
+            legacy_mode = (data.get('mode') or '').lower()
+            microsd_path = data.get('microsd_path') or ''
+            local_path = data.get('local_path') or ''
+            if legacy_mode == 'microsd' and microsd_path:
+                storage_candidate = microsd_path
+            elif local_path:
+                storage_candidate = local_path
+            elif microsd_path:
+                storage_candidate = microsd_path
+            else:
+                storage_candidate = defaults['storage_path']
+        config['storage_path'] = os.path.abspath(os.path.expanduser(os.path.expandvars(str(storage_candidate))))
+
+        # Remove deprecated keys from in-memory config so downstream code uses the new shape
+        for legacy_key in ('mode', 'local_path', 'microsd_path'):
+            if legacy_key in config:
+                config.pop(legacy_key, None)
         if not os.path.exists(self._config_path):
             try:
                 os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
+                payload = dict(config)
                 with open(self._config_path, 'w', encoding='utf-8') as fh:
-                    json.dump(config, fh, ensure_ascii=False, indent=2)
+                    json.dump(payload, fh, ensure_ascii=False, indent=2)
             except Exception:
                 pass
         return config
@@ -431,8 +676,11 @@ class MainWindow(QMainWindow):
             self._config_path = os.path.join(self._determine_config_dir(), 'config.json')
         try:
             os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
+            payload = dict(self.config)
+            for legacy_key in ('mode', 'local_path', 'microsd_path'):
+                payload.pop(legacy_key, None)
             with open(self._config_path, 'w', encoding='utf-8') as fh:
-                json.dump(self.config, fh, ensure_ascii=False, indent=2)
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
@@ -441,7 +689,7 @@ class MainWindow(QMainWindow):
             return True
 
         default_path = self._default_models_directory()
-        initial_path = self.config.get('local_path') or default_path
+        initial_path = self.config.get('storage_path') or default_path
         dialog = WelcomeDialog(
             self,
             initial_path=initial_path,
@@ -457,8 +705,7 @@ class MainWindow(QMainWindow):
         if theme_choice not in ('light', 'dark'):
             theme_choice = 'light'
 
-        self.config['mode'] = 'local'
-        self.config['local_path'] = chosen_path
+        self.config['storage_path'] = chosen_path
         self.config['theme'] = theme_choice
         self.config['welcome_completed'] = True
 
@@ -469,19 +716,70 @@ class MainWindow(QMainWindow):
         return True
 
     def _resolve_models_root(self) -> str:
-        mode = (self.config.get('mode') or 'local').lower()
-        path = None
-        if mode == 'microsd':
-            path = self.config.get('microsd_path') or os.path.abspath(os.path.sep)
-        else:
-            path = self.config.get('local_path') or self._default_models_directory()
-        path = os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
+        path = self.config.get('storage_path') or self._default_models_directory()
+        path = os.path.abspath(os.path.expandvars(os.path.expanduser(str(path))))
+        drive, _ = os.path.splitdrive(path)
+        drive_path = (drive + os.sep) if drive else None
+        self._storage_drive_missing = False
+        if drive_path and not os.path.exists(drive_path):
+            self._storage_drive_missing = True
+            return path
+
         if not os.path.isdir(path):
             try:
                 os.makedirs(path, exist_ok=True)
+            except FileNotFoundError:
+                self._storage_drive_missing = True
             except Exception:
                 pass
         return path
+
+    def _prompt_missing_storage_if_needed(self) -> None:
+        if not getattr(self, '_storage_drive_missing', False):
+            return
+        if getattr(self, '_shown_storage_missing_prompt', False):
+            return
+        self._shown_storage_missing_prompt = True
+
+        configured_path = self.config.get('storage_path') or self.models_root
+        configured_path = os.path.abspath(os.path.expandvars(os.path.expanduser(str(configured_path))))
+        default_path = self._default_models_directory()
+
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Warning)
+        message.setWindowTitle('Drive Not Found')
+        message.setText(
+            'The configured models folder is not available. This can happen if a removable drive '
+            'is disconnected. Choose a new location or use the default Documents\zPrint folder.'
+        )
+        message.setInformativeText(configured_path)
+        choose_btn = message.addButton('Choose Location…', QMessageBox.AcceptRole)
+        default_btn = message.addButton('Use Default', QMessageBox.ActionRole)
+        ignore_btn = message.addButton('Ignore', QMessageBox.DestructiveRole)
+        message.setDefaultButton(choose_btn)
+        message.exec()
+
+        clicked = message.clickedButton()
+        if clicked is choose_btn:
+            new_path = self._pick_existing_models_folder(default_path)
+            if new_path:
+                self._update_storage_path(new_path)
+        elif clicked is default_btn:
+            self._update_storage_path(default_path)
+        else:
+            # if user ignores, leave config untouched but don't nag again this session
+            return
+
+    def _update_storage_path(self, new_path: str) -> None:
+        if not new_path:
+            return
+        new_path = os.path.abspath(os.path.expandvars(os.path.expanduser(str(new_path))))
+        self.config['storage_path'] = new_path
+        self._save_config()
+        self._shown_storage_missing_prompt = False
+        self.models_root = self._resolve_models_root()
+        self._refresh_eject_button()
+        self._prompt_missing_storage_if_needed()
 
     def _resolve_icon_path(self, candidates) -> str | None:
         if isinstance(candidates, str):
@@ -553,6 +851,15 @@ class MainWindow(QMainWindow):
                 search_terms.append(g.get('material'))
                 search_terms.append(g.get('colour') or g.get('color'))
             search_blob = ' '.join(str(term) for term in search_terms if term).lower()
+            recorded_active = meta.get('active_gcode_files') or []
+            active_files: list[str] = []
+            for fname in recorded_active:
+                if not fname:
+                    continue
+                candidate = os.path.join(self.models_root, fname)
+                if os.path.isfile(candidate):
+                    active_files.append(fname)
+            is_active = bool(meta.get('active')) and bool(active_files)
             models.append({
                 'name': model_name,
                 'folder': folder_path,
@@ -567,6 +874,8 @@ class MainWindow(QMainWindow):
                 'search_blob': search_blob,
                 'stl_file': meta.get('stl_file') or model_file,
                 'model_file': model_file,
+                'active': is_active,
+                'active_gcode_files': active_files,
             })
             if progress:
                 detail = model_name or entry
@@ -710,6 +1019,8 @@ class MainWindow(QMainWindow):
         total = len(models)
         for model in models:
             card = QWidget()
+            card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            card.setMinimumSize(QSize(260, 340))
             layout = QVBoxLayout(card)
             layout.setContentsMargins(5, 5, 5, 5)
 
@@ -758,14 +1069,14 @@ class MainWindow(QMainWindow):
 
             name_label = QLabel(model.get('name', ''))
             name_label.setProperty('cardHeader', True)
-            name_label.setStyleSheet('background: transparent;')
+            name_label.setStyleSheet('background: transparent; padding-left: 12px;')
             layout.addWidget(name_label)
             self.card_headers.append(name_label)
 
             time_text = model.get('print_time') or 'N/A'
             time_label = QLabel(f"Print time: {time_text}")
             time_label.setProperty('cardSub', True)
-            time_label.setStyleSheet('background: transparent;')
+            time_label.setStyleSheet('background: transparent; padding-left: 16px;')
             layout.addWidget(time_label)
             self.card_subtexts.append(time_label)
 
@@ -778,8 +1089,19 @@ class MainWindow(QMainWindow):
             self._register_icon(btn_edit, ('editmodel.svg', 'editbutton.svg'))
             btn_edit.clicked.connect(partial(self.edit_model, model))
             btn_edit.setIconSize(QSize(18, 18))
+            active_button = QPushButton()
+            active_button.setCheckable(True)
+            active_button.setToolTip('Toggle to copy this model\'s G-code into the storage root')
+            active_button.blockSignals(True)
+            active_state = bool(model.get('active'))
+            active_button.setChecked(active_state)
+            self._style_active_button(active_button, active_state)
+            active_button.blockSignals(False)
+            active_button.toggled.connect(partial(self._on_card_active_toggled, model, active_button))
+            btn_layout.addWidget(active_button)
             btn_layout.addWidget(btn_3d)
             btn_layout.addWidget(btn_edit)
+            btn_layout.addStretch(1)
             layout.addLayout(btn_layout)
 
             card.setProperty('card', True)
@@ -803,6 +1125,79 @@ class MainWindow(QMainWindow):
             self._resize_top_buttons(initial=True)
         except Exception:
             pass
+
+    def _resolve_active_icon(self, size: int) -> QIcon | None:
+        try:
+            key = int(size)
+        except Exception:
+            key = 18
+        key = max(16, min(32, key))
+        cache = getattr(self, '_active_icon_cache', None)
+        if cache is None:
+            cache = {}
+            self._active_icon_cache = cache
+        if key in cache:
+            return cache[key]
+        path = self._resolve_icon_path(('activate.svg', 'active.svg', 'check.svg'))
+        if not path:
+            cache[key] = None
+            return None
+        icon = self._tint_icon(path, '#FFFFFF', QSize(key, key))
+        cache[key] = icon
+        return icon
+
+    def _style_active_button(self, button: QPushButton, active: bool) -> None:
+        base_style = 'color: #ffffff; font-weight: 600; padding: 6px 12px; border-radius: 6px;'
+        if active:
+            button.setText('Active')
+            button.setStyleSheet(
+                f'QPushButton {{ background-color: #34C759; {base_style} }} '
+                f'QPushButton:pressed {{ background-color: #34C759; }}'
+            )
+        else:
+            button.setText('Inactive')
+            button.setStyleSheet(
+                f'QPushButton {{ background-color: #FF3B30; {base_style} }} '
+                f'QPushButton:pressed {{ background-color: #FF3B30; }}'
+            )
+        try:
+            dim = button.height() or button.sizeHint().height() or 32
+        except Exception:
+            dim = 32
+        dim = max(16, min(24, int(dim)))
+        icon = self._resolve_active_icon(dim)
+        if icon and not icon.isNull():
+            button.setIcon(icon)
+            button.setIconSize(QSize(dim, dim))
+        else:
+            button.setIcon(QIcon())
+            try:
+                button.setIconSize(QSize())
+            except Exception:
+                pass
+
+    def _on_card_active_toggled(self, model: dict, button: QPushButton, checked: bool) -> None:
+        previous = bool(model.get('active'))
+        if checked == previous:
+            self._style_active_button(button, checked)
+            return
+
+        try:
+            active_files, updated_meta, timestamp = set_model_active(model, self.models_root, checked)
+        except ActiveModelError as exc:
+            QMessageBox.critical(self, 'Active Model', f'Unable to update active state:\n{exc}')
+            button.blockSignals(True)
+            button.setChecked(previous)
+            button.blockSignals(False)
+            self._style_active_button(button, previous)
+            return
+
+        model['metadata'] = updated_meta
+        model['active'] = checked
+        model['active_gcode_files'] = list(active_files)
+        model['last_modified_dt'] = timestamp
+        self._style_active_button(button, checked)
+        self._apply_model_filters()
 
     def _apply_thumbnail_pixmap(self, label: QLabel) -> None:
         pixmap = self._thumbnail_sources.get(label)
@@ -1240,11 +1635,7 @@ class MainWindow(QMainWindow):
                 pass
 
     def import_files(self):
-        start_mode = (self.config.get('mode') or 'local').lower()
-        if start_mode == 'microsd':
-            default_dir = self.config.get('microsd_path') or os.path.abspath(os.path.sep)
-        else:
-            default_dir = self.config.get('local_path') or self._default_models_directory()
+        default_dir = self.config.get('storage_path') or self._default_models_directory()
         default_dir = os.path.abspath(os.path.expandvars(os.path.expanduser(default_dir)))
 
         chooser = QMessageBox(self)
@@ -1265,13 +1656,7 @@ class MainWindow(QMainWindow):
         if not chosen:
             return
 
-        chosen = os.path.abspath(os.path.expandvars(os.path.expanduser(chosen)))
-        if start_mode == 'microsd':
-            self.config['microsd_path'] = chosen
-        else:
-            self.config['local_path'] = chosen
-        self._save_config()
-        self.models_root = self._resolve_models_root()
+        self._update_storage_path(chosen)
         self.reload_files()
 
     def add_model(self):
@@ -1285,17 +1670,11 @@ class MainWindow(QMainWindow):
             return
 
         result = getattr(dialog, 'result_data', {}) or {}
-        location = (result.get('location') or '').lower()
-        base_path = result.get('base_path')
-        if location in ('local', 'microsd'):
-            self.config['mode'] = location
-        if base_path:
-            if location == 'local':
-                self.config['local_path'] = base_path
-            elif location == 'microsd':
-                self.config['microsd_path'] = base_path
-        self.models_root = self._resolve_models_root()
-        self._save_config()
+        storage_path = result.get('storage_path')
+        if storage_path:
+            self._update_storage_path(storage_path)
+        else:
+            self.models_root = self._resolve_models_root()
         self.reload_files()
 
     def view_model(self, model_data: dict):

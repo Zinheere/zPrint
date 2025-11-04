@@ -59,6 +59,13 @@ class NewModelDialog(QDialog):
         self.gcode_table: QTableWidget = self.ui.tableGcodes
         self.button_box: QDialogButtonBox = self.ui.buttonBox
 
+        if self.location_combo is not None:
+            self.location_combo.hide()
+            self.location_combo = None
+        location_label = getattr(self.ui, "labelLocation", None)
+        if location_label is not None:
+            location_label.hide()
+
         if self.minimumWidth() <= 0 or self.minimumHeight() <= 0:
             self.setMinimumSize(560, 520)
         if self.width() <= 0 or self.height() <= 0:
@@ -87,8 +94,6 @@ class NewModelDialog(QDialog):
             self.add_gcode_btn.clicked.connect(self._on_add_gcode)
         if self.remove_gcode_btn is not None:
             self.remove_gcode_btn.clicked.connect(self._on_remove_gcode)
-        if self.location_combo is not None:
-            self.location_combo.currentTextChanged.connect(self._on_location_changed)
         if self.browse_destination_btn is not None:
             self.browse_destination_btn.clicked.connect(self._on_browse_destination)
 
@@ -97,61 +102,27 @@ class NewModelDialog(QDialog):
             self.button_box.rejected.connect(self.reject)
 
     def _apply_defaults(self) -> None:
-        if self.location_combo is not None:
-            self.location_combo.clear()
-            self.location_combo.addItems(["Local", "MicroSD"])
-            mode = (self.config.get("mode") or "local").lower()
-            if mode == "microsd":
-                self.location_combo.setCurrentText("MicroSD")
-            else:
-                self.location_combo.setCurrentText("Local")
-
         if self.destination_edit is not None:
-            self.destination_edit.setText(self._resolve_default_destination(self.location_combo.currentText() if self.location_combo else "Local"))
+            self.destination_edit.setText(self._resolve_default_destination())
 
         if self.preview_label is not None:
             self.preview_label.setText("No Preview")
             self.preview_label.setAlignment(Qt.AlignCenter)
 
-        self._on_location_changed(self.location_combo.currentText() if self.location_combo else "Local")
-
-    def _resolve_default_destination(self, location: str) -> str:
-        if location.lower() == "microsd":
-            path = self.config.get("microsd_path") or self._detect_removable_drive()
-        else:
-            path = self.config.get("local_path")
+    def _resolve_default_destination(self) -> str:
+        path = self.config.get("storage_path")
         if not path:
             path = os.path.join(self.app_dir, "testfiles")
         return os.path.abspath(os.path.expanduser(os.path.expandvars(path)))
 
-    def _detect_removable_drive(self) -> str:
-        candidate = self.config.get("microsd_path")
-        if candidate:
-            return candidate
-        if os.name == "nt":
-            for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
-                root = f"{letter}:\\"
-                if os.path.exists(root):
-                    return root
-        return ""
-
-    def _on_location_changed(self, value: str) -> None:
-        is_local = value.lower() == "local"
-        if self.destination_edit is not None:
-            self.destination_edit.setEnabled(is_local)
-        if self.browse_destination_btn is not None:
-            self.browse_destination_btn.setEnabled(is_local)
-        if self.destination_edit is not None:
-            self.destination_edit.setText(self._resolve_default_destination(value))
-
     def _on_browse_destination(self) -> None:
-        base = self.destination_edit.text() if self.destination_edit else self._resolve_default_destination("local")
+        base = self.destination_edit.text() if self.destination_edit else self._resolve_default_destination()
         directory = QFileDialog.getExistingDirectory(self, "Select Destination Folder", base)
         if directory and self.destination_edit is not None:
             self.destination_edit.setText(directory)
 
     def _on_browse_stl(self) -> None:
-        start_dir = os.path.dirname(self.stl_edit.text()) if self.stl_edit and self.stl_edit.text() else self._resolve_default_destination("local")
+        start_dir = os.path.dirname(self.stl_edit.text()) if self.stl_edit and self.stl_edit.text() else self._resolve_default_destination()
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Model File",
@@ -180,7 +151,7 @@ class NewModelDialog(QDialog):
             self._preview_generated = False
 
     def _on_choose_preview(self) -> None:
-        start_dir = os.path.dirname(self._preview_source_path) if self._preview_source_path else self._resolve_default_destination("local")
+        start_dir = os.path.dirname(self._preview_source_path) if self._preview_source_path else self._resolve_default_destination()
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Preview Image",
@@ -209,7 +180,7 @@ class NewModelDialog(QDialog):
         self.preview_label.setText("")
 
     def _on_add_gcode(self) -> None:
-        start_dir = self._resolve_default_destination(self.location_combo.currentText() if self.location_combo else "local")
+        start_dir = self._resolve_default_destination()
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Select G-code Files",
@@ -301,16 +272,15 @@ class NewModelDialog(QDialog):
             raise ValueError("Select an STL or 3MF file.")
         if not os.path.isfile(stl_path):
             raise ValueError("The selected model file no longer exists.")
-        location = self.location_combo.currentText() if self.location_combo else "Local"
         destination_root = self.destination_edit.text().strip() if self.destination_edit else ""
-        destination_root = self._resolve_default_destination(location) if not destination_root else destination_root
+        if not destination_root:
+            destination_root = self._resolve_default_destination()
         gcode_entries = self._collect_gcode_entries()
 
         return {
             "name": name,
             "model_path": stl_path,
             "gcodes": gcode_entries,
-            "location": location,
             "destination_root": destination_root,
         }
 
@@ -389,8 +359,7 @@ class NewModelDialog(QDialog):
 
         return {
             "folder_path": model_dir,
-            "location": data["location"],
-            "base_path": dest_root,
+            "storage_path": dest_root,
         }
 
     def _parse_gcode_filename(self, path: str) -> dict:

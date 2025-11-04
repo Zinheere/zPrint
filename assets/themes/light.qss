@@ -82,12 +82,12 @@ QPushButton#btnAddModel {
 }
 
 /* Top-bar buttons get a distinct top-bar blue (different from Add Model CTA) */
-QPushButton#btnReload, QPushButton#btnImport {
+QPushButton#btnReload, QPushButton#btnImport, QPushButton#btnEjectStorage {
   background-color: #E0E6ED; /* grey */
   color: #222222;
   border: 1px solid #D0D6DE;
 }
-QPushButton#btnReload:hover, QPushButton#btnImport:hover { background-color: #D6DBE0; }
+QPushButton#btnReload:hover, QPushButton#btnImport:hover, QPushButton#btnEjectStorage:hover { background-color: #D6DBE0; }
 
 /* Top bar container background (subtle blue, distinct from Add Model) */
 QWidget#topBarFrame {

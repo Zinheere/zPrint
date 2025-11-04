@@ -1,28 +1,28 @@
 # Project TODO
 
 0.5.0 main features:
-- [ ] autocreate models using unsorted gcode and model files (under "import button")
-- [ ] add support for alternate stl/3mf files
-- [ ] add an eject sd card if files are stored in sd
-- [ ] add view gcode button in the 3d preview popup, gcode 3d view
-- top conventional menu bar (windows text only kind):
- settings page (change storage location; which moves files to a different location)
- about page 
+- [ ] About dialog in the top menu
+- [ ] Auto-create models from unsorted G-code and model files (Import button)
+- [x] Eject SD card option when storage lives on an SD drive
+- [ ] G-code preview button in the 3D preview dialog (3D view)
+- [ ] Menu bar (Windows text-only style)
+- [ ] Settings page to change storage location and move files
+- [ ] Support alternate STL/3MF files
 
 
 0.4.0 main features:
 more file management improvments
-- [ ] can select models to be "active" which places a copy of the gcode in the root directory of the storage location
-- [ ] remove microsd/local mode, microsd use can just be selecting a different drive, add a "drive not found" alert if microsd is not inserted
+- [x] can select models to be "active" which places a copy of the gcode in the root directory of the storage location
+- [x] remove microsd/local mode, microsd use can just be selecting a different drive, add a "drive not found" alert if microsd is not inserted
 
 ## Backlog
-- [ ] import and implement more icons (0.40)
-- [x] add button in the edit dialogue to set preview image as regenerate model preview image
-- [x] PROBLEM: top bars text size reverses to small font after theme toggle
 
 ## Completed
+- [x] Ignore the test config.json from packaging
+- [x] Import and implement new icons (0.40)
 - [x] update program to reflect v0.030
 - [x] v0.30 beta release notes
+- [x] PROBLEM: top bars text size reverses to small font after theme toggle
 - [x] add button in the edit dialogue to set preview image as regenerate model preview image
 - [x] make the app show a loading bar instead of not responding when loading large file
 - [x] save mode (microsd/local) in config json so it is used as the default in save location dropdown in the add model menu

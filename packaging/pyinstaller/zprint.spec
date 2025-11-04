@@ -8,6 +8,13 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files, coll
 block_cipher = None
 
 PROJECT_ROOT = os.path.abspath(os.getcwd())
+
+_EXCLUDED_DATA = {
+    os.path.normcase('config.json'),
+    os.path.normcase(os.path.join('testfiles', 'config.json')),
+}
+
+
 def _collect_hidden_imports() -> list:
     hidden = set([
         'PySide6.QtSvg',
@@ -56,6 +63,19 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+def _should_exclude_data(path: str) -> bool:
+    try:
+        rel = os.path.relpath(path, PROJECT_ROOT)
+    except ValueError:
+        rel = path
+    norm_rel = os.path.normcase(rel)
+    if norm_rel in _EXCLUDED_DATA:
+        return True
+    return False
+
+a.datas = [entry for entry in a.datas if not _should_exclude_data(entry[0])]
+a.binaries = [entry for entry in a.binaries if not _should_exclude_data(entry[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

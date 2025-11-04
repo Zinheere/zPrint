@@ -87,14 +87,14 @@ QPushButton#btnThemeToggle {
   border: 1px solid #111111;
 }
 
-/* Top-bar buttons (Reload, Import) use a secondary blue distinct from Add Model */
-/* Reload/Import as grey in dark mode */
-QPushButton#btnReload, QPushButton#btnImport {
+/* Top-bar buttons (Reload, Import, Eject) use a secondary neutral distinct from Add Model */
+/* Reload/Import/Eject as grey in dark mode */
+QPushButton#btnReload, QPushButton#btnImport, QPushButton#btnEjectStorage {
   background-color: #3b3f41;
   color: #e6e6e6;
   border: 1px solid #4b4f51;
 }
-QPushButton#btnReload:hover, QPushButton#btnImport:hover { background-color: #44484a; }
+QPushButton#btnReload:hover, QPushButton#btnImport:hover, QPushButton#btnEjectStorage:hover { background-color: #44484a; }
 
 /* Top bar container background (distinct blue) */
 QWidget#topBarFrame {
