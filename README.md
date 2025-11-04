@@ -6,14 +6,14 @@
 
 ## Installer
 
-- ✅ The signed Windows installer is ready at [releases](https://github.com/Zinheere/zPrint/releases). Run it to install zPrint with shortcuts and file associations.
+- ✅ The signed Windows installer is ready at [releases](https://github.com/Zinheere/zPrint/releases/latest). Run it to install zPrint with shortcuts and file associations.
 - Prefer a portable build? Use the self-contained folder in `dist\zPrint\`.
 
 ## Using zPrint
 
 ### First Launch
 
-1. Install via `zPrint-Setup.exe` from [releases](https://github.com/Zinheere/zPrint/releases).
+1. Install via `zPrint-Setup.exe` from [releases](https://github.com/Zinheere/zPrint/releases/latest).
 2. Start zPrint; the welcome prompts guide you through selecting a storage location and default theme. The app creates a `models.json` library and folders if needed.
 3. You can update both choices later from the gear menu in the main window.
 
