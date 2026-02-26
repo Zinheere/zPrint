@@ -134,8 +134,20 @@ class MainWindow(QMainWindow):
         # apply the chosen theme immediately on startup
         self.apply_theme(self.dark_theme)
         self._prompt_missing_storage_if_needed()
-        # ensure the window opens at a comfortable working size
-        self.resize(1280, 900)
+        # ensure the window opens at a comfortable working size, but adapt to screen
+        try:
+            from PySide6.QtGui import QGuiApplication
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                available = screen.availableGeometry()
+                default_w = min(1280, max(480, int(available.width() * 0.85)))
+                default_h = min(900, max(400, int(available.height() * 0.85)))
+                self.resize(default_w, default_h)
+            else:
+                self.resize(1280, 900)
+        except Exception:
+            self.resize(1280, 900)
+        self.setMinimumSize(320, 280)
         # tracked card header labels for dynamic font resizing
         self.card_headers = []
         self.card_subtexts = []
@@ -343,14 +355,57 @@ class MainWindow(QMainWindow):
         self._create_loading_overlay()
 
     def _show_about_dialog(self) -> None:
-        description = (
-            "<p><strong>zPrint</strong> helps organise printable models, stl/3mf files, and G-code"
-            " files so you can keep your sd cards and model variants in sync.</p>"
-            f"<p>Version {APP_VERSION}</p>"
-            "<p>Built for at-a-glace file viewing with streamlined import,"
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QDialogButtonBox
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("About zPrint")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(380)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        title_label = QLabel("<h2>zPrint</h2>")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        desc_label = QLabel(
+            "<p>Helps organise printable models, STL/3MF files, and G-code files"
+            " so you can keep your SD cards and model variants in sync.</p>"
+            f"<p><b>Version {APP_VERSION}</b></p>"
+            "<p>Built for at-a-glance file viewing with streamlined import,"
             " preview, and activation.</p>"
         )
-        QMessageBox.about(self, "About zPrint", description)
+        desc_label.setWordWrap(True)
+        desc_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(desc_label)
+
+        social_label = QLabel("Find us online:")
+        social_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(social_label)
+
+        socials = [
+            ("GitHub", "https://github.com/Zinheere/zPrint"),
+            ("Printables", "https://www.printables.com"),
+            ("MakerWorld", "https://makerworld.com"),
+            ("Reddit (r/3Dprinting)", "https://www.reddit.com/r/3Dprinting/"),
+            ("Discord (3D Printing)", "https://discord.gg/3Dprinting"),
+            ("YouTube", "https://www.youtube.com/results?search_query=3d+printing"),
+        ]
+
+        for name, url in socials:
+            link = QLabel(f'<a href="{url}">{name}</a>')
+            link.setAlignment(Qt.AlignCenter)
+            link.setOpenExternalLinks(True)
+            layout.addWidget(link)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        dialog.exec()
 
     def _show_help_dialog(self) -> None:
         # Build a simple scrollable help viewer sourced from README instructions.
@@ -577,8 +632,13 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'top_bar_buttons') or not self.top_bar_buttons:
             return
         win_h = max(1, self.height())
-        # choose a height between 28 and 56 px based on window height (roughly 4-8% of height)
-        target_h = max(28, min(56, int(win_h * 0.06)))
+        win_w = max(1, self.width())
+        # On small screens (< 500px wide) use a reduced height to fit more content
+        if win_w < 500:
+            target_h = max(24, min(36, int(win_h * 0.05)))
+        else:
+            # choose a height between 28 and 56 px based on window height (roughly 4-8% of height)
+            target_h = max(28, min(56, int(win_h * 0.06)))
 
         for btn in self.top_bar_buttons:
             is_theme_btn = btn.objectName() == 'btnThemeToggle' and bool(getattr(self, '_theme_icon_path', None))
@@ -661,8 +721,13 @@ class MainWindow(QMainWindow):
 
         # Update card header fonts so they scale with window size as well
         try:
-            # pick a card header font size based on window height, clamped to 12-18
-            card_pt = max(12, min(18, int(win_h * 0.026)))
+            # pick a card header font size based on window height, clamped to 10-18
+            # on small screens (< 500px wide) use a tighter range for compactness
+            win_w = max(1, self.width())
+            if win_w < 500:
+                card_pt = max(10, min(14, int(win_h * 0.022)))
+            else:
+                card_pt = max(12, min(18, int(win_h * 0.026)))
             for lbl in getattr(self, 'card_headers', []):
                 try:
                     lf = lbl.font() or QFont()
@@ -1359,7 +1424,7 @@ class MainWindow(QMainWindow):
         for model in models:
             card = QWidget()
             card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            card.setMinimumSize(QSize(260, 340))
+            card.setMinimumSize(QSize(180, 260))
             layout = QVBoxLayout(card)
             layout.setContentsMargins(5, 5, 5, 5)
 
@@ -1367,7 +1432,7 @@ class MainWindow(QMainWindow):
             thumbnail.setAlignment(Qt.AlignCenter)
             thumbnail.setProperty('thumbnail', True)
             thumbnail.setScaledContents(False)
-            thumbnail.setMinimumSize(160, 120)
+            thumbnail.setMinimumSize(120, 90)
             thumbnail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             thumbnail_pixmap = None
             preview_path = model.get('preview_path')
@@ -1436,16 +1501,6 @@ class MainWindow(QMainWindow):
             self._register_icon(btn_edit, ('editmodel.svg', 'editbutton.svg'))
             btn_edit.clicked.connect(partial(self.edit_model, model))
             btn_edit.setIconSize(QSize(18, 18))
-            active_button = QPushButton()
-            active_button.setCheckable(True)
-            active_button.setToolTip('Toggle to copy this model\'s G-code into the storage root')
-            active_button.blockSignals(True)
-            active_state = bool(model.get('active'))
-            active_button.setChecked(active_state)
-            self._style_active_button(active_button, active_state)
-            active_button.blockSignals(False)
-            active_button.toggled.connect(partial(self._on_card_active_toggled, model, active_button))
-            btn_layout.addWidget(active_button)
             btn_layout.addWidget(btn_3d)
             btn_layout.addWidget(btn_edit)
             btn_layout.addStretch(1)
@@ -2236,6 +2291,13 @@ class MainWindow(QMainWindow):
                     except Exception as exc:
                         QMessageBox.warning(self, 'Save Changes', f'Unable to delete {filename}:\n{exc}')
 
+        if getattr(dialog, 'active_state_changed', False):
+            try:
+                requested = bool(getattr(dialog, 'requested_active', False))
+                set_model_active(model_data, self.models_root, requested)
+            except Exception as exc:
+                QMessageBox.warning(self, 'Active State', f'Unable to update active state:\n{exc}')
+
         self.reload_files()
 
     def populate_gallery(self):
@@ -2269,8 +2331,8 @@ class MainWindow(QMainWindow):
             spacing = 6
 
         # Choose a minimum card width (approx) and compute how many columns fit, but cap at three
-        min_card_w = 240
-        cols = max(2, int((available_w + spacing) / (min_card_w + spacing)))
+        min_card_w = 180
+        cols = max(1, int((available_w + spacing) / (min_card_w + spacing)))
         cols = min(cols, 3)
 
         # Ensure each active column shares the same stretch so widths stay uniform

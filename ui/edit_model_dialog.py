@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -52,6 +53,8 @@ class EditModelDialog(QDialog):
         self.generated_preview_pixmap: QPixmap | None = None
         self.pending_model_copies: list[dict] = []
         self.model_files_to_delete: list[str] = []
+        self.active_state_changed: bool = False
+        self.requested_active: bool = False
 
         self._load_metadata()
         self._build_ui()
@@ -149,14 +152,23 @@ class EditModelDialog(QDialog):
         layout.addWidget(hint)
 
         controls = QHBoxLayout()
+        self.active_checkbox = QCheckBox("Mark as Active (copies G-code to storage root)", self)
+        self.active_checkbox.setToolTip(
+            "When checked, this model's G-code files are copied to the root of the storage location."
+        )
+        controls.addWidget(self.active_checkbox)
+        controls.addStretch(1)
+        layout.addLayout(controls)
+
+        delete_row = QHBoxLayout()
         self.delete_button = QPushButton("Delete Model…", self)
         self.delete_button.setStyleSheet(
             "QPushButton { background-color: #FF3B30; color: #ffffff; font-weight: 600; padding: 6px 12px; border-radius: 6px; } "
             "QPushButton:pressed { background-color: #FF3B30; }"
         )
-        controls.addWidget(self.delete_button)
-        controls.addStretch(1)
-        layout.addLayout(controls)
+        delete_row.addWidget(self.delete_button)
+        delete_row.addStretch(1)
+        layout.addLayout(delete_row)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, self)
         layout.addWidget(self.button_box)
@@ -178,6 +190,9 @@ class EditModelDialog(QDialog):
 
         display_time = self.metadata.get("print_time") or self.model_data.get("print_time") or ""
         self.print_time_edit.setText(str(display_time))
+
+        is_active = bool(self.metadata.get("active") or self.model_data.get("active"))
+        self.active_checkbox.setChecked(is_active)
 
         preview_name = self.metadata.get("preview_image") or ""
         self.original_preview_name = preview_name
@@ -633,6 +648,10 @@ class EditModelDialog(QDialog):
         metadata["last_modified"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
         self.updated_metadata = metadata
+        original_active = bool(self.metadata.get("active") or self.model_data.get("active"))
+        new_active = self.active_checkbox.isChecked()
+        self.active_state_changed = new_active != original_active
+        self.requested_active = new_active
         self.delete_requested = False
         super().accept()
 
