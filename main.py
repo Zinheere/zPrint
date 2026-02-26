@@ -382,17 +382,18 @@ class MainWindow(QMainWindow):
         desc_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(desc_label)
 
-        social_label = QLabel("Find us online:")
+        social_label = QLabel("Find us &amp; the 3D printing community online:")
+        social_label.setWordWrap(True)
         social_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(social_label)
 
         socials = [
-            ("GitHub", "https://github.com/Zinheere/zPrint"),
-            ("Printables", "https://www.printables.com"),
-            ("MakerWorld", "https://makerworld.com"),
-            ("Reddit (r/3Dprinting)", "https://www.reddit.com/r/3Dprinting/"),
-            ("Discord (3D Printing)", "https://discord.gg/3Dprinting"),
-            ("YouTube", "https://www.youtube.com/results?search_query=3d+printing"),
+            ("GitHub (source code & releases)", "https://github.com/Zinheere/zPrint"),
+            ("Printables (free 3D models)", "https://www.printables.com"),
+            ("MakerWorld (free 3D models)", "https://makerworld.com"),
+            ("r/3Dprinting on Reddit", "https://www.reddit.com/r/3Dprinting/"),
+            ("r/3Dprinting Discord server", "https://discord.gg/3Dprinting"),
+            ("YouTube – 3D printing tutorials", "https://www.youtube.com/results?search_query=3d+printing+tutorial"),
         ]
 
         for name, url in socials:
