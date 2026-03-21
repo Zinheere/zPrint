@@ -3,7 +3,8 @@ import os
 import json
 import re
 import shutil
-from datetime import datetime
+import zipfile
+from datetime import datetime, timezone
 from functools import partial
 from typing import Callable
 from PySide6.QtWidgets import (
@@ -26,20 +27,23 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QMenuBar,
     QTextBrowser,
+    QStatusBar,
+    QFrame,
 )
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QSize, QEvent, QTimer, QEventLoop
-from PySide6.QtGui import QAction, QIcon, QFont, QPixmap
+from PySide6.QtGui import QAction, QIcon, QFont, QPixmap, QKeySequence, QShortcut
 
 from core.svg_rendering import tint_icon
 from core.stl_preview import render_stl_preview
 from core.active_manager import ActiveModelError, set_model_active
+from core.gcode_metadata import extract_extended_metadata
 from ui.new_model_dialog import NewModelDialog
 from ui.edit_model_dialog import EditModelDialog
 from ui.stl_preview_dialog import StlPreviewDialog
 from ui.welcome_dialog import WelcomeDialog
 
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.5.0"
 
 
 class StorageSettingsDialog(QDialog):
@@ -148,6 +152,8 @@ class MainWindow(QMainWindow):
         self._search_term = ''
         self._current_material_filter = 'All Materials'
         self._current_sort_index = 0
+        self._setup_status_bar()
+        self._setup_keyboard_shortcuts()
         self.populate_gallery()
 
     def load_ui(self):
@@ -221,6 +227,11 @@ class MainWindow(QMainWindow):
             help_action.triggered.connect(self._show_help_dialog)
         if settings_action is not None:
             settings_action.triggered.connect(self._show_settings_dialog)
+
+        # Add Export Library and Auto-Import actions to the menu bar at runtime
+        active_menu_bar = self.menuBar() or menu_bar
+        if active_menu_bar is not None:
+            self._inject_extra_menu_actions(active_menu_bar)
 
         # Access top bar buttons by object name (use findChild because loader returned
         # a separate object rather than attaching attributes to this instance)
@@ -343,12 +354,14 @@ class MainWindow(QMainWindow):
         self._create_loading_overlay()
 
     def _show_about_dialog(self) -> None:
+        total = len(self._models) if hasattr(self, '_models') else 0
+        active = sum(1 for m in (self._models or []) if m.get('active'))
         description = (
-            "<p><strong>zPrint</strong> helps organise printable models, stl/3mf files, and G-code"
-            " files so you can keep your sd cards and model variants in sync.</p>"
-            f"<p>Version {APP_VERSION}</p>"
-            "<p>Built for at-a-glace file viewing with streamlined import,"
-            " preview, and activation.</p>"
+            f"<p><b>zPrint {APP_VERSION}</b></p>"
+            "<p>Streamlined 3D print file organiser &amp; model gallery.<br>"
+            "Manage STL/3MF models, G-code variants, and SD-card exports from one place.</p>"
+            f"<p>Library: <b>{total}</b> model(s) &nbsp;|&nbsp; <b>{active}</b> active</p>"
+            "<p><small>Built with Python &amp; PySide6</small></p>"
         )
         QMessageBox.about(self, "About zPrint", description)
 
@@ -402,6 +415,247 @@ class MainWindow(QMainWindow):
             config_changed = True
         elif config_changed:
             self._save_config()
+
+    # ------------------------------------------------------------------
+    # Status bar, shortcuts and extra menu actions
+    # ------------------------------------------------------------------
+
+    def _setup_status_bar(self) -> None:
+        """Create and attach a status bar that shows library statistics."""
+        bar = QStatusBar(self)
+        bar.setObjectName('appStatusBar')
+        bar.setSizeGripEnabled(False)
+        self.setStatusBar(bar)
+
+        self._status_model_count = QLabel('0 models')
+        self._status_active_count = QLabel('0 active')
+        self._status_materials = QLabel('')
+        self._status_storage = QLabel('')
+
+        for lbl in (self._status_model_count, self._status_active_count, self._status_materials, self._status_storage):
+            lbl.setContentsMargins(6, 0, 6, 0)
+
+        bar.addWidget(self._status_model_count)
+        bar.addWidget(self._make_status_separator())
+        bar.addWidget(self._status_active_count)
+        bar.addWidget(self._make_status_separator())
+        bar.addWidget(self._status_materials)
+        bar.addPermanentWidget(self._status_storage)
+
+    def _make_status_separator(self) -> QFrame:
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        return sep
+
+    def _update_status_bar(self) -> None:
+        """Refresh the status bar labels to reflect the current library state."""
+        if not hasattr(self, '_status_model_count'):
+            return
+        models = getattr(self, '_models', []) or []
+        visible = getattr(self, '_visible_models', []) or []
+        total = len(models)
+        shown = len(visible)
+        active_count = sum(1 for m in models if m.get('active'))
+        materials = sorted({mat for m in models for mat in m.get('materials', []) if mat})
+        mat_text = ', '.join(materials[:4])
+        if len(materials) > 4:
+            mat_text += f' +{len(materials) - 4}'
+
+        if shown < total:
+            self._status_model_count.setText(f'{shown} / {total} models')
+        else:
+            self._status_model_count.setText(f'{total} model{"s" if total != 1 else ""}')
+        self._status_active_count.setText(f'{active_count} active')
+        self._status_materials.setText(mat_text)
+
+        storage_path = getattr(self, 'models_root', '') or ''
+        if storage_path:
+            self._status_storage.setText(f'📁 {storage_path}')
+        else:
+            self._status_storage.setText('')
+
+    def _setup_keyboard_shortcuts(self) -> None:
+        """Register application-wide keyboard shortcuts."""
+        QShortcut(QKeySequence('Ctrl+R'), self).activated.connect(self.reload_files)
+        QShortcut(QKeySequence('Ctrl+N'), self).activated.connect(self.add_model)
+        QShortcut(QKeySequence('Ctrl+F'), self).activated.connect(self._focus_search)
+        QShortcut(QKeySequence('Ctrl+Q'), self).activated.connect(self.close)
+        QShortcut(QKeySequence('Ctrl+E'), self).activated.connect(self._export_library)
+        QShortcut(QKeySequence('Ctrl+Shift+I'), self).activated.connect(self._auto_import_folder)
+
+    def _focus_search(self) -> None:
+        if self.search_box is not None:
+            self.search_box.setFocus()
+            self.search_box.selectAll()
+
+    def _inject_extra_menu_actions(self, menu_bar: QMenuBar) -> None:
+        """Add Export Library and Auto-Import Folder actions to the menu bar."""
+        # Find or create a Tools/File menu
+        tools_menu = None
+        for action in menu_bar.actions():
+            submenu = action.menu()
+            if submenu is not None and action.text().strip().lower() in ('tools', 'file', '&tools', '&file'):
+                tools_menu = submenu
+                break
+
+        if tools_menu is None:
+            tools_menu = menu_bar.addMenu('Tools')
+
+        export_action = QAction('Export Library…', self)
+        export_action.setShortcut(QKeySequence('Ctrl+E'))
+        export_action.setToolTip('Zip the entire models library as a backup archive')
+        export_action.triggered.connect(self._export_library)
+
+        auto_import_action = QAction('Auto-Import Folder…', self)
+        auto_import_action.setShortcut(QKeySequence('Ctrl+Shift+I'))
+        auto_import_action.setToolTip('Scan a folder and create model entries for every STL/3MF found')
+        auto_import_action.triggered.connect(self._auto_import_folder)
+
+        tools_menu.addSeparator()
+        tools_menu.addAction(export_action)
+        tools_menu.addAction(auto_import_action)
+
+    # ------------------------------------------------------------------
+    # Export Library
+    # ------------------------------------------------------------------
+
+    def _export_library(self) -> None:
+        """Zip the entire models library and save to a user-chosen location."""
+        source = getattr(self, 'models_root', None) or self.config.get('storage_path') or ''
+        source = os.path.abspath(os.path.expandvars(os.path.expanduser(str(source)))) if source else ''
+        if not source or not os.path.isdir(source):
+            QMessageBox.warning(self, 'Export Library', 'Models library folder not found. Configure storage first.')
+            return
+
+        default_name = f"zPrint_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.zip"
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            'Export Library As…',
+            os.path.join(os.path.expanduser('~'), default_name),
+            'ZIP Archives (*.zip)',
+        )
+        if not save_path:
+            return
+
+        self._show_loading('Exporting library…')
+        QApplication.processEvents(QEventLoop.AllEvents, 1)
+        try:
+            with zipfile.ZipFile(save_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+                for root_dir, _dirs, files in os.walk(source):
+                    for filename in files:
+                        full_path = os.path.join(root_dir, filename)
+                        arcname = os.path.relpath(full_path, os.path.dirname(source))
+                        zf.write(full_path, arcname)
+        except Exception as exc:
+            self._hide_loading()
+            QMessageBox.critical(self, 'Export Library', f'Export failed:\n{exc}')
+            return
+        self._hide_loading()
+        QMessageBox.information(self, 'Export Library', f'Library exported to:\n{save_path}')
+
+    # ------------------------------------------------------------------
+    # Auto-Import Folder
+    # ------------------------------------------------------------------
+
+    def _auto_import_folder(self) -> None:
+        """Scan a folder and auto-create model entries for every STL/3MF found."""
+        start_dir = os.path.expanduser('~')
+        source_folder = QFileDialog.getExistingDirectory(
+            self,
+            'Choose Folder to Auto-Import',
+            start_dir,
+        )
+        if not source_folder:
+            return
+        source_folder = os.path.abspath(os.path.expandvars(os.path.expanduser(source_folder)))
+
+        model_exts = {'.stl', '.3mf', '.obj'}
+        found: list[str] = []
+        try:
+            for name in sorted(os.listdir(source_folder)):
+                _, ext = os.path.splitext(name)
+                if ext.lower() in model_exts:
+                    found.append(name)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Auto-Import', f'Cannot read folder:\n{exc}')
+            return
+
+        if not found:
+            QMessageBox.information(
+                self,
+                'Auto-Import',
+                'No STL, 3MF, or OBJ files found in the selected folder.',
+            )
+            return
+
+        models_root = getattr(self, 'models_root', '') or self.config.get('storage_path') or ''
+        models_root = os.path.abspath(os.path.expandvars(os.path.expanduser(str(models_root)))) if models_root else ''
+        if not models_root:
+            QMessageBox.warning(self, 'Auto-Import', 'Configure a models library location in Settings first.')
+            return
+
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Question)
+        confirm.setWindowTitle('Auto-Import')
+        confirm.setText(f'Found {len(found)} model file(s) in:\n{source_folder}')
+        confirm.setInformativeText(
+            'zPrint will create a library entry for each file. '
+            'Each model will be placed in its own sub-folder inside your library.'
+        )
+        confirm.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        confirm.setDefaultButton(QMessageBox.Ok)
+        if confirm.exec() != QMessageBox.Ok:
+            return
+
+        self._show_loading(f'Importing {len(found)} model(s)…')
+        imported = 0
+        skipped = 0
+        delete_sources = bool(self.config.get('delete_source_after_import', False))
+        sources_to_delete: list[str] = []
+
+        for filename in found:
+            self._update_loading_progress(imported + skipped, len(found), f'Importing {filename}…')
+            name_no_ext, ext = os.path.splitext(filename)
+            model_folder = os.path.join(models_root, name_no_ext)
+            if os.path.exists(model_folder):
+                skipped += 1
+                continue
+            try:
+                os.makedirs(model_folder, exist_ok=True)
+                source_file = os.path.join(source_folder, filename)
+                dest_file = os.path.join(model_folder, filename)
+                shutil.copy2(source_file, dest_file)
+
+                meta = {
+                    'name': name_no_ext,
+                    'model_files': [filename],
+                    'model_file': filename,
+                    'gcodes': [],
+                    'time_created': datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+                    'last_modified': datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+                    'active': False,
+                }
+                meta_path = os.path.join(model_folder, 'model.json')
+                with open(meta_path, 'w', encoding='utf-8') as fh:
+                    json.dump(meta, fh, ensure_ascii=False, indent=2)
+
+                if delete_sources:
+                    sources_to_delete.append(source_file)
+                imported += 1
+            except Exception:
+                skipped += 1
+
+        self._hide_loading()
+
+        if delete_sources and sources_to_delete:
+            self._remove_original_files(sources_to_delete)
+
+        summary = f'Imported {imported} model(s).'
+        if skipped:
+            summary += f'\n{skipped} skipped (already exist or error).'
+        QMessageBox.information(self, 'Auto-Import', summary)
+        self.reload_files()
 
     def _apply_storage_location_change(self, new_path: str) -> None:
         current_raw = str(self.models_root) if getattr(self, 'models_root', None) else ''
@@ -1081,7 +1335,7 @@ class MainWindow(QMainWindow):
         message.setWindowTitle('Drive Not Found')
         message.setText(
             'The configured models folder is not available. This can happen if a removable drive '
-            'is disconnected. Choose a new location or use the default Documents\zPrint folder.'
+            r'is disconnected. Choose a new location or use the default Documents\zPrint folder.'
         )
         message.setInformativeText(configured_path)
         choose_btn = message.addButton('Choose Location…', QMessageBox.AcceptRole)
@@ -1420,12 +1674,61 @@ class MainWindow(QMainWindow):
             layout.addWidget(name_label)
             self.card_headers.append(name_label)
 
-            time_text = model.get('print_time') or 'N/A'
-            time_label = QLabel(f"Print time: {time_text}")
+            # Build an info row with print time and material badges
+            info_row = QHBoxLayout()
+            info_row.setContentsMargins(12, 0, 8, 0)
+            info_row.setSpacing(6)
+
+            time_text = model.get('print_time') or ''
+            if time_text:
+                time_label = QLabel(f'⏱ {time_text}')
+            else:
+                time_label = QLabel('⏱ N/A')
             time_label.setProperty('cardSub', True)
-            time_label.setStyleSheet('background: transparent; padding-left: 16px;')
-            layout.addWidget(time_label)
+            time_label.setStyleSheet('background: transparent;')
+            info_row.addWidget(time_label)
             self.card_subtexts.append(time_label)
+
+            # Material colour badges (up to 2)
+            _BADGE_MAX_CHARS = 16
+            materials = model.get('materials') or []
+            badge_colours = self._material_badge_colours()
+            for idx, mat in enumerate(materials[:2]):
+                badge_colour = badge_colours[idx % len(badge_colours)]
+                badge = QLabel(mat[:_BADGE_MAX_CHARS])
+                badge.setAlignment(Qt.AlignCenter)
+                badge.setStyleSheet(
+                    f'background-color: {badge_colour}; color: #ffffff; '
+                    f'border-radius: 8px; padding: 1px 7px; font-size: 10px; font-weight: 600;'
+                )
+                badge.setMaximumWidth(90)
+                info_row.addWidget(badge)
+
+            if len(materials) > 2:
+                more_badge = QLabel(f'+{len(materials) - 2}')
+                more_badge.setAlignment(Qt.AlignCenter)
+                more_badge.setStyleSheet(
+                    'background-color: #9AA6B2; color: #ffffff; '
+                    'border-radius: 8px; padding: 1px 7px; font-size: 10px;'
+                )
+                info_row.addWidget(more_badge)
+
+            info_row.addStretch(1)
+
+            # G-code count chip
+            gcode_count = len(model.get('gcodes') or [])
+            if gcode_count:
+                gcode_chip = QLabel(f'G {gcode_count}')
+                gcode_chip.setAlignment(Qt.AlignCenter)
+                chip_bg = '#444' if getattr(self, 'dark_theme', False) else '#E0E6ED'
+                chip_fg = '#eee' if getattr(self, 'dark_theme', False) else '#555'
+                gcode_chip.setStyleSheet(
+                    f'background-color: {chip_bg}; color: {chip_fg}; '
+                    f'border-radius: 8px; padding: 1px 7px; font-size: 10px;'
+                )
+                info_row.addWidget(gcode_chip)
+
+            layout.addLayout(info_row)
 
             btn_layout = QHBoxLayout()
             btn_3d = QPushButton('3D View')
@@ -1470,6 +1773,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self._resize_top_buttons(initial=True)
+        except Exception:
+            pass
+        try:
+            self._update_status_bar()
         except Exception:
             pass
 
@@ -1522,6 +1829,10 @@ class MainWindow(QMainWindow):
                 button.setIconSize(QSize())
             except Exception:
                 pass
+
+    def _material_badge_colours(self) -> list[str]:
+        """Return a palette of badge background colours cycling through materials."""
+        return ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30', '#5AC8FA']
 
     def _on_card_active_toggled(self, model: dict, button: QPushButton, checked: bool) -> None:
         previous = bool(model.get('active'))

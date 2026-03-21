@@ -2,7 +2,7 @@
 
 > ### Streamlined print file organiser &amp; model gallery
 
-**Current:** 0.4.2 – *G-code preview & metadata*
+**Current:** 0.5.0 – *Auto-import, export, status bar &amp; extended G-code metadata*
 
 ## ⬇️ Install ⬇️
 
@@ -20,9 +20,11 @@
 
 ### Organising Models
 
-- Click **Import** to add existing STL/3MF models and associated G-code. zPrint creates a folder per model and copies the selected files into the library.
+- Click **Import** to set up your models folder (select an existing one or create a new folder).
+- Use **New Model** (or `Ctrl+N`) to add a single STL/3MF model with its associated G-code files.
+- Use **Tools › Auto-Import Folder…** (`Ctrl+Shift+I`) to batch-scan a directory and create library entries for every STL/3MF/OBJ file found automatically.
 - Use the top search bar and sort/material filters to locate models quickly.
-- Mark G-code files as *active* and copy them to removable storage via the Edit Model dialog.
+- Mark G-code files as *active* and copy them to removable storage via the card toggle.
 
 ### Editing Metadata & Previews
 
@@ -39,7 +41,35 @@
 - Copy, remove, or replace associated G-code directly from the Edit dialog without leaving the app.
 - The gallery shows determinate progress overlays during heavy operations so the window stays responsive.
 
+### Exporting / Backup
+
+- Use **Tools › Export Library…** (`Ctrl+E`) to zip the entire models library into a portable backup archive.
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+N` | New model |
+| `Ctrl+R` | Reload library |
+| `Ctrl+F` | Focus search bar |
+| `Ctrl+E` | Export library (zip) |
+| `Ctrl+Shift+I` | Auto-import folder |
+| `Ctrl+Q` | Quit |
+
 ## Release Notes
+
+### 0.5.0 (2026-03-21)
+
+- Added **Auto-Import Folder** (`Tools › Auto-Import Folder… / Ctrl+Shift+I`): scan any directory and automatically create a library entry for every STL/3MF/OBJ file found.
+- Added **Export Library** (`Tools › Export Library… / Ctrl+E`): zip the entire models folder into a timestamped backup archive.
+- Added a **status bar** showing live model count, active-model count, materials summary, and current storage path.
+- Added application-wide **keyboard shortcuts**: `Ctrl+N` new model, `Ctrl+R` reload, `Ctrl+F` focus search, `Ctrl+E` export, `Ctrl+Shift+I` auto-import, `Ctrl+Q` quit.
+- Extended G-code metadata extraction now also captures **nozzle temperature**, **bed temperature**, **layer height**, **filament used**, and **slicer name/version**.
+- Improved **model cards**: material colour badges (colour-coded pills) replace plain text; G-code file count chip; cleaner info row layout.
+- **Card hover effect** in both light and dark themes for better visual feedback.
+- Improved **tooltips** with padding and border-radius in both themes.
+- Enhanced **thumbnail borders** with rounded corners in the gallery.
+- Improved **About dialog** to show live model and active counts.
 
 ### 0.4.2 (2025-11-04)
 

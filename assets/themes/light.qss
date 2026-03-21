@@ -88,8 +88,6 @@ QCheckBox::indicator:disabled {
 }
 
 /* Primary action styling */
-/* Default button style - neutral (not all buttons should be CTA blue)
-   We'll override specific buttons (like btnAddModel) to be the primary CTA. */
 QPushButton {
   background-color: #F0F4F8;
   color: #222222;
@@ -129,13 +127,18 @@ QWidget#topBarFrame {
   background-color: #EAF3FF;
 }
 
-/* Card container border */
+/* Card container border + hover glow */
 QWidget[card="true"] {
   border: 1px solid #E0E6ED;
-  border-radius: 6px;
+  border-radius: 8px;
   background-color: #FFFFFF;
   padding: 6px;
 }
+QWidget[card="true"]:hover {
+  border: 1px solid #B8D0F0;
+  background-color: #F8FBFF;
+}
+
 /* Theme toggle button: white in light mode */
 QPushButton#btnThemeToggle {
   background-color: #FFFFFF;
@@ -151,12 +154,15 @@ QToolTip {
   background-color: #FFFFFF;
   color: #222222;
   border: 1px solid #E0E6ED;
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 /* Gallery thumbnail style */
 QLabel[thumbnail="true"] {
   background-color: #F5F7FA;
   border: 1px solid #E0E6ED;
+  border-radius: 4px;
 }
 
 /* Modern scrollbars */
@@ -194,5 +200,21 @@ QScrollBar::add-line, QScrollBar::sub-line {
 }
 QScrollBar::add-page, QScrollBar::sub-page {
   background: transparent;
+}
+
+/* Status bar */
+QStatusBar#appStatusBar {
+  background-color: #EAF3FF;
+  color: #444;
+  border-top: 1px solid #D6E4F7;
+  font-size: 11px;
+  padding: 0px 4px;
+}
+QStatusBar#appStatusBar QLabel {
+  background: transparent;
+  color: #444;
+}
+QStatusBar#appStatusBar QFrame {
+  color: #C0CAD6;
 }
 

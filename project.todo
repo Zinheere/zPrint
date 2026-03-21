@@ -6,10 +6,24 @@
 
 0.5.0 main features:
 - [x] About dialog in the top menu
-- [ ] Auto-create models from unsorted G-code and model files (Import button)
+- [x] Auto-create models from unsorted G-code and model files (Auto-Import Folder, Tools menu)
 - [x] G-code preview button in the 3D preview dialog (3D view)
 - [x] Settings page to change storage location (automoves file)
-- [ ] Extented model property data extraction
+- [x] Extended model property data extraction (nozzle temp, bed temp, layer height, filament used, slicer)
+- [x] Status bar showing model count, active count, materials, and storage path
+- [x] Keyboard shortcuts (Ctrl+N, Ctrl+R, Ctrl+F, Ctrl+E, Ctrl+Shift+I, Ctrl+Q)
+- [x] Export Library as zip backup (Tools menu, Ctrl+E)
+- [x] Material colour badges on cards
+- [x] G-code count chip on cards
+- [x] Card hover effect in both themes
+- [x] Improved About dialog with live stats
+
+## Future ideas:
+- [ ] Tags / collections for grouping models
+- [ ] Bulk delete / multi-select in gallery
+- [ ] Print queue / scheduling
+- [ ] Direct OctoPrint integration
+- [ ] More detailed print statistics dashboard
 
 ## Completed
 - [x] Support alternate STL/3MF files
@@ -44,6 +58,19 @@
 - [x] Package Windows release (PyInstaller bundle + Inno Setup installer)
 
 ## Release Notes
+
+### 0.5.0 (2026-03-21)
+
+- Added Auto-Import Folder (Tools › Auto-Import Folder… / Ctrl+Shift+I): scans a directory and creates library entries for every STL/3MF/OBJ found.
+- Added Export Library (Tools › Export Library… / Ctrl+E): zips the entire models folder into a timestamped backup archive.
+- Added status bar showing live model count, active-model count, materials summary, and current storage path.
+- Added keyboard shortcuts: Ctrl+N, Ctrl+R, Ctrl+F, Ctrl+E, Ctrl+Shift+I, Ctrl+Q.
+- Extended G-code metadata extraction: nozzle temperature, bed temperature, layer height, filament used, slicer name/version.
+- Improved model cards: material colour badges, G-code count chip, cleaner info row layout.
+- Card hover glow effect in both light and dark themes.
+- Improved tooltips, thumbnail borders, and About dialog.
+- Bumped version to 0.5.0.
+
 ### 0.4.2 (2025-11-04)
 
 - Added an interactive G-code toolpath preview with enhanced lighting and shadow controls.
