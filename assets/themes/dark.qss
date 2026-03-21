@@ -86,8 +86,6 @@ QCheckBox::indicator:disabled {
   border-color: #3b3f41;
 }
 
-/* Primary action styling: use same blue for contrast on dark.
-   Buttons remain colored to be visible on dark backgrounds. */
 /* Default button style - neutral on dark background */
 QPushButton {
   background-color: #2f3335;
@@ -123,7 +121,6 @@ QPushButton#btnThemeToggle {
 }
 
 /* Top-bar buttons (Reload, Import, Eject) use a secondary neutral distinct from Add Model */
-/* Reload/Import/Eject as grey in dark mode */
 QPushButton#btnReload, QPushButton#btnImport, QPushButton#btnEjectStorage {
   background-color: #3b3f41;
   color: #e6e6e6;
@@ -136,12 +133,16 @@ QWidget#topBarFrame {
   background-color: #063A6B;
 }
 
-/* Card container border */
+/* Card container border + hover glow */
 QWidget[card="true"] {
   border: 1px solid #3b3f41;
-  border-radius: 6px;
+  border-radius: 8px;
   background-color: #232629;
   padding: 6px;
+}
+QWidget[card="true"]:hover {
+  border: 1px solid #2a6cba;
+  background-color: #252c34;
 }
 
 /* Success / Error indicators */
@@ -152,11 +153,14 @@ QToolTip {
   background-color: #1f1f1f;
   color: #e6e6e6;
   border: 1px solid #444444;
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 /* Gallery thumbnail style */
 QLabel[thumbnail="true"] {
   border: 1px solid #3b3f41;
+  border-radius: 4px;
 }
 
 /* Modern scrollbars */
@@ -194,5 +198,21 @@ QScrollBar::add-line, QScrollBar::sub-line {
 }
 QScrollBar::add-page, QScrollBar::sub-page {
   background: transparent;
+}
+
+/* Status bar */
+QStatusBar#appStatusBar {
+  background-color: #063A6B;
+  color: #c8d8f0;
+  border-top: 1px solid #0a4a80;
+  font-size: 11px;
+  padding: 0px 4px;
+}
+QStatusBar#appStatusBar QLabel {
+  background: transparent;
+  color: #c8d8f0;
+}
+QStatusBar#appStatusBar QFrame {
+  color: #2a5a8a;
 }
 
